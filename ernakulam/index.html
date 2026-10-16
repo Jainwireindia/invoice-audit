@@ -10,19 +10,24 @@
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
   :root{
+    /* ---- branch colours: background family + accent (the ONLY colours that differ by branch) ---- */
     --paper: #F3EFE4;
     --paper-raised: #FAF7EF;
-    --ink: #1E2A38;
-    --ink-soft: #4A5A6A;
+    --paper-sunk: #FDFBF4;
     --rule: #D6CFBB;
     --rule-strong: #B9AF95;
+    --rule-soft: #EEE9DC;
+    --gold: #A9832E;
+    --accent-bg: rgba(169,131,46,0.08);
+    /* ---- shared colours ---- */
+    --ink: #1E2A38;
+    --ink-soft: #4A5A6A;
     --green: #2F6844;
     --green-bg: #E7EEE4;
     --red: #A63A2E;
     --red-bg: #F3E4DE;
     --amber: #A9832E;
     --amber-bg: #F2ECD9;
-    --gold: #A9832E;
   }
 
   *{ box-sizing: border-box; }
@@ -100,7 +105,7 @@
     padding: 26px 24px; text-align: center; cursor: pointer;
     transition: border-color .15s ease, background .15s ease; margin-bottom: 16px;
   }
-  .dropzone:hover, .dropzone.drag{ border-color: var(--gold); background: #FDFBF4; }
+  .dropzone:hover, .dropzone.drag{ border-color: var(--gold); background: var(--paper-sunk); }
   .dropzone .icon{ font-size: 22px; margin-bottom: 6px; }
   .dropzone .main{ font-weight: 600; font-size: 14px; margin-bottom: 3px; }
   .dropzone .sub{ font-size: 12px; color: var(--ink-soft); }
@@ -159,6 +164,7 @@
   /* Flagged bills stay fully expanded in screenshot mode — make the actual discrepancy text bigger
      and bolder, since this is what gets read straight off a phone screenshot by someone else. */
   body.screenshot-mode .rate-note,
+  body.screenshot-mode .other-note,
   body.screenshot-mode .item-mismatch-note,
   body.screenshot-mode .not-dispatched-note,
   body.screenshot-mode .bundle-note,
@@ -222,7 +228,7 @@
   .match-box .no-excel-note{ color: var(--ink-soft); font-size:12.5px; }
   .match-box .party-mismatch-tag{ font-family:'IBM Plex Mono', monospace; font-size:12px; color: var(--red); font-weight:700; }
   .match-box .manual-note{ font-size:11.5px; color: var(--ink-soft); margin-bottom:8px; font-family:'IBM Plex Mono', monospace; }
-  .rate-note, .item-mismatch-note, .not-dispatched-note{ font-size:10.5px; color: var(--red); font-family:'IBM Plex Mono', monospace; margin-top:2px; font-weight:600; }
+  .rate-note, .item-mismatch-note, .not-dispatched-note, .other-note{ font-size:10.5px; color: var(--red); font-family:'IBM Plex Mono', monospace; margin-top:2px; font-weight:600; }
   .missing-items-box{ border-top: 2px solid var(--red); margin-top: 4px; padding-top: 10px; }
   .missing-item-row{ font-size: 12.5px; font-family:'IBM Plex Mono', monospace; color: var(--red); font-weight:600; background: var(--red-bg); border: 1px solid var(--red); border-radius: 3px; padding: 8px 10px; margin-bottom: 6px; }
 
@@ -297,6 +303,15 @@
   .spec-match-box{ color: var(--green); background: var(--green-bg); border: 1px solid var(--green); border-radius: 3px; padding: 3px 6px; }  .spec-mismatch-box{ color: #7A5E10; background: var(--amber-bg); border: 1px solid var(--amber); border-radius: 3px; padding: 3px 6px; font-weight: 600; }
   .mismatch-toggle{ display:flex; align-items:center; gap:4px; font-size:10.5px; color: var(--red); font-family:'IBM Plex Mono', monospace; margin-top:3px; cursor:pointer; user-select:none; }
   .mismatch-toggle input{ cursor:pointer; }
+  .info-note{ font-size:10.5px; color: #8a6a1e; font-family:'IBM Plex Mono', monospace; margin-top:2px; }
+  .qty-calc{ font-family:'IBM Plex Mono', monospace; font-size: 9.5px; color: var(--ink-soft); margin-top: 2px; white-space: nowrap; }
+  .entity-tag{ font-family:'IBM Plex Mono', monospace; font-size: 11px; color: var(--gold); font-weight: 600; }
+  body.screenshot-mode [data-preview]{ display: none; }
+  .match-edit{ align-items: flex-end; gap: 14px; }
+  .match-status{ padding-bottom: 6px; }
+  .ss-only{ display: none !important; }
+  body.screenshot-mode .ss-only{ display: flex !important; }
+  body.screenshot-mode .match-edit{ display: none !important; }
   .bundle-note, .qty-note{ font-size:10.5px; color: var(--red); font-family:'IBM Plex Mono', monospace; margin-top:2px; font-weight:600; }
 
   tfoot td{
@@ -381,11 +396,11 @@
   .ov-scroll{ max-height: 420px; overflow: auto; border: 1px solid var(--rule); border-radius: 3px; background: #fff; }
   .ov-table{ width:100%; border-collapse: collapse; font-size: 12.5px; }
   .ov-table thead th{ position: sticky; top: 0; background: var(--paper-raised); text-align:left; font-family:'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 500; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-soft); padding: 7px 8px; border-bottom: 1px solid var(--rule); z-index: 1; }
-  .ov-table td{ padding: 6px 8px; border-bottom: 1px solid #EEE9DC; vertical-align: top; }
+  .ov-table td{ padding: 6px 8px; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
   .ov-table .num{ text-align:right; font-variant-numeric: tabular-nums; }
   .ov-table .code{ font-family:'IBM Plex Mono', monospace; font-size: 11.5px; }
   .ov-row{ cursor:pointer; }
-  .ov-row:hover td{ background: var(--amber-bg); }
+  .ov-row:hover td{ background: var(--accent-bg); }
   .ov-file{ max-width: 190px; overflow:hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-soft); }
   .ov-muted{ color: var(--ink-soft); font-style: italic; }
   .ov-empty{ color: var(--ink-soft); text-align:center; padding: 14px !important; }
@@ -393,7 +408,7 @@
   .ov-status.ok{ color: var(--green); background: var(--green-bg); }
   .ov-status.bad{ color: var(--red); background: var(--red-bg); }
   .ov-status.pending{ color: #8a6a1e; background: var(--amber-bg); }
-  .ov-status.muted{ color: var(--ink-soft); background: #EEE9DC; }
+  .ov-status.muted{ color: var(--ink-soft); background: var(--rule-soft); }
   .ov-tag{ display:inline-block; font-size: 10.5px; padding: 0 6px; border-radius: 3px; margin-left: 4px; white-space: nowrap; }
   .ov-tag.warn{ color: #8a6a1e; border: 1px solid var(--amber); }
   .to-overview{ display:none; position: fixed; right: 18px; bottom: 18px; z-index: 20; font-family:'IBM Plex Mono', monospace; font-size: 12px; color: var(--paper-raised); background: var(--ink); border: 0; border-radius: 18px; padding: 8px 14px; cursor:pointer; box-shadow: 0 2px 8px rgba(0,0,0,.18); }
@@ -440,8 +455,8 @@
 
   <header>
     <p class="eyebrow">Ernakulam · Invoice · Rate · Audit</p>
-    <h1>Invoice Audit Tool <span class="version-badge" id="versionBadge">v6.2</span></h1>
-    <p>Upload today's rate Excel, then drop all the bill PDFs at once. The Bill overview lists every file with its status, so you can work through what needs attention and jump straight to it. Once you confirm which Excel customer each bill belongs to, quoted rates and ordered quantities auto-fill from the sheet — you only type anything for lines it can't match.</p>
+    <h1>Invoice Audit Tool <span class="version-badge" id="versionBadge">v6.3</span></h1>
+    <p>Upload today's rate Excel, then drop all the bill PDFs at once. The Bill overview lists every file with its status, so you can work through what needs attention and jump straight to it. Each bill is matched to its Excel customer automatically when the name is clear; quoted rates and ordered quantities then auto-fill from the sheet — you only pick or type anything where it isn't sure.</p>
   </header>
 
   <div class="toggles">
@@ -486,7 +501,7 @@
   <footer>
     Bills are read inside this page, straight from the PDF text · nothing is uploaded and no AI is called.<br>
     Every bill gets a fresh party and item check, every time — nothing is auto-remembered between bills. Item shorthand is decoded for reference only, not used in the rate math.<br>
-    <span id="footerVersion">Invoice Audit Tool v6.2</span>
+    <span id="footerVersion">Invoice Audit Tool v6.3</span>
   </footer>
 </div>
 
@@ -497,56 +512,25 @@
 // per browser/machine so an "updated" notice can be shown after an update (see
 // loadPersisted()). This is purely a tracking label — it has no effect on parsing
 // or matching logic.
-const APP_VERSION = 'v6.2';
-// Web build: Claude's window.storage doesn't exist on GitHub Pages, so this shim stores the same
-// keys in the browser's localStorage under an "jainwire.ekm." prefix (kept apart from Calicut's keys,
-// which share the same website). If storage is blocked, saving silently does nothing, as before.
-window.storage = {
-  async get(key){ try{ const v = localStorage.getItem('jainwire.ekm.' + key); return v === null ? null : { key, value: v }; }catch(e){ return null; } },
-  async set(key, value){ try{ localStorage.setItem('jainwire.ekm.' + key, value); }catch(e){} return { key, value }; }
+const APP_VERSION = 'v6.3';
+// =====================================================================================
+//  BRANCH FORMULAS — ERNAKULAM (EKM)
+//  Everything between this line and "END BRANCH FORMULAS" is specific to Ernakulam: how the rate
+//  sheet is read, how bills are matched to it, and how the expected rate and quantity are worked
+//  out. Everything outside this block is the shared tool, identical in every branch's file.
+// =====================================================================================
+const BRANCH = {
+  key: 'ekm',
+  name: 'Ernakulam',
+  storagePrefix: 'jainwire.ekm.',
+  gstins: { '32AAFFJ6260N1Z6': 'Ernakulam' },  // seller GSTINs accepted on this branch's bills
+  descMaxChars: 60,          // bill descriptions are cut to this length (0 = keep in full)
+  qtyFollowsCategory: false, // changing a line's Category does not re-derive its Actual Qty here
 };
-console.log('Invoice Audit Tool — ' + APP_VERSION);
 
-const excelZone = document.getElementById('excelZone');
-const excelInput = document.getElementById('excelInput');
-const excelStatus = document.getElementById('excelStatus');
-const tallyBar = document.getElementById('tallyBar');
-const screenshotToggle = document.getElementById('screenshotToggle');
-const dropzone = document.getElementById('dropzone');
-const fileInput = document.getElementById('fileInput');
-const processingEl = document.getElementById('processing');
-const resultsEl = document.getElementById('results');
-const rulesToggle = document.getElementById('rulesToggle');
-const rulesPanel = document.getElementById('rulesPanel');
-const codesToggle = document.getElementById('codesToggle');
-const codesPanel = document.getElementById('codesPanel');
-const logToggle = document.getElementById('logToggle');
-const logPanel = document.getElementById('logPanel');
-const parserReportToggle = document.getElementById('parserReportToggle');
-const parserReportPanel = document.getElementById('parserReportPanel');
-const exportBar = document.getElementById('exportBar');
-const exportBtn = document.getElementById('exportBtn');
-
-screenshotToggle.addEventListener('click', () => {
-  document.body.classList.toggle('screenshot-mode');
-  screenshotToggle.style.background = document.body.classList.contains('screenshot-mode') ? 'var(--ink)' : '';
-  screenshotToggle.style.color = document.body.classList.contains('screenshot-mode') ? 'var(--paper-raised)' : '';
-  document.querySelectorAll('.invoice-card').forEach(card => recalcCard(card));
-});
-
-function renderTally(){
-  scheduleOverview();
-  if(!excelWorkbookData || !excelWorkbookData.blocks.length){
-    tallyBar.classList.remove('show');
-    return;
-  }
-  const billed = new Set(window.__records.filter(r => r.selectedBlockName).map(r => r.selectedBlockName));
-  const blockNames = excelWorkbookData.blocks.map(b => b.customerName);
-  const missing = blockNames.filter(name => !billed.has(name));
-  tallyBar.classList.add('show');
-  tallyBar.innerHTML = `${billed.size} of ${blockNames.length} Excel customers billed` +
-    (missing.length ? `<br><span class="missing">Not yet given for checking: ${missing.map(escapeHtml).join(', ')}</span>` : '');
-}
+// Called once per bill line when a bill is read. Ernakulam reads height from the description later
+// (guessHeightFt) and uses the category's default length, so there is nothing extra to set up.
+function branchInitRow(row){}
 
 // ---- Default pricing rules (editable) ----
 const defaultRules = {
@@ -591,273 +575,6 @@ let itemCodes = [["1/2x1/2x10x2 lite", "Gi Weldmesh 17mm x 17mm x 2.00mm x 2ft"]
 
 const V61_NEW_CODES = [["1/2x1/2x10x2 lite", "Gi Weldmesh 17mm x 17mm x 2.00mm x 2ft"], ["1/2x1/2x10x3 lite", "Gi Weldmesh 17mm x 17mm x 2.00mm x 3ft"], ["1/2x1/2x10x4 lite", "Gi Weldmesh 17mm x 17mm x 2.00mm x 4ft"], ["1/2x1/2x10x5 lite", "Gi Weldmesh 17mm x 17mm x 2.00mm x 5ft"], ["1/2x1/2x10x6 lite", "Gi Weldmesh 17mm x 17mm x 2.00mm x 6ft"]];
 
-// ---- Persisted state (survives reload, via artifact storage) ----
-// Party matches are intentionally NOT remembered across bills — every bill gets a fresh human check,
-// on both the party name and the item lines, every time.
-let excelWorkbookData = null; // { blocks: [{customerName, rows:[{code,qty,rate}]}] }
-
-// ---- Discrepancy log: persists across reloads (unlike bill records), just Date/Party/Count ----
-// Deliberately NOT used for party-name matching or any other functional purpose — plain audit text only.
-let checkLog = [];
-// Every file processed gets one entry here: which path read it (direct/AI/failed) and, for
-// anything other than a clean direct read, why. This is the "why report" — a persistent,
-// no-devtools-required answer to "why did this bill use the API" or "why did this bill fail",
-// so a pattern across a batch (e.g. several files rejected for the same reason) is visible at a
-// glance instead of requiring the console to be open at the moment it happened.
-let parserReport = [];
-const PARSER_REPORT_CAP = 500;
-// path: 'deterministic' (clean read) | 'direct-warn' (read, but the self-check found figures that
-// don't agree) | 'delivery-note' | 'duplicate' | 'failed' | 'ai' (only in entries from older versions)
-// extra: { code, warnings[], batch, defer } — defer skips the save so a 50-file batch saves once.
-function logParserEvent(filename, path, reason, extra){
-  extra = extra || {};
-  parserReport.push({
-    id: 'pr' + Date.now() + Math.random().toString(36).slice(2, 7),
-    filename,
-    date: new Date().toLocaleString('en-IN', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }),
-    path,
-    code: extra.code || null,
-    reason: reason || null,
-    warnings: extra.warnings || [],
-    batch: extra.batch || null
-  });
-  if(parserReport.length > PARSER_REPORT_CAP) parserReport = parserReport.slice(-PARSER_REPORT_CAP);
-  if(extra.defer) return;
-  savePersisted();
-  if(parserReportPanel.classList.contains('open')) renderParserReportPanel();
-}
-
-// What each failure code means and what to do — shown in the report so a code can be acted on
-// without needing to remember them.
-const PARSER_CODE_HELP = {
-  READ_CHECK:        'Read, but figures disagree — compare the listed lines with the PDF. If the PDF is right, the reader misread it: send the file in.',
-  NO_TABLE:          'No item table found. Different print format, or not a sales invoice — send the file in if it should have been read.',
-  NO_ROWS:           'Item table found but rows not recognised — the column layout differs. Send the file in.',
-  NOT_JAINWIRE:      'Not a Jain Wire sales invoice (no Jain Wire name, no item table).',
-  NO_TEXT:           'Scanned or photographed PDF — no text to read. Export the bill from Tally instead.',
-  PASSWORD:          'Password-protected PDF — export again without a password.',
-  DAMAGED:           'Damaged PDF — export again from Tally.',
-  TIMEOUT:           'Took too long to read — likely damaged. Export again.',
-  NOT_PDF:           'Not a PDF file.',
-  EMPTY:             'Empty file (0 bytes).',
-  UNREADABLE:        'Browser could not open the file.',
-  LIB_MISSING:       'PDF reader did not load — reload the page (needs internet once).',
-  OPEN_ERROR:        'PDF could not be opened.',
-  TEXT_ERROR:        'PDF text could not be extracted.',
-  PARSER_ERROR:      'Reader crashed on this layout — send the file in.',
-  INTERNAL:          'Unexpected error — send the file in.',
-  DUPLICATE_FILE:    'Same file dropped twice — skipped.',
-  DUPLICATE_INVOICE: 'Same invoice number already loaded — skipped.',
-  DELIVERY_NOTE:     'Delivery note — no rate check needed.',
-};
-
-// The help text is shown inline only where it says something the reason doesn't (what to do next);
-// for the rest it's on the code chips' hover text.
-const PR_HELP_INLINE = new Set(['READ_CHECK', 'NO_TABLE', 'NO_ROWS', 'PARSER_ERROR', 'INTERNAL']);
-let parserReportFilter = 'problems';
-const PARSER_BADGES = {
-  'deterministic': '<span style="color:var(--green);">✓ read</span>',
-  'direct-warn':   '<span style="color:#b8860b;">⚠ read check</span>',
-  'delivery-note': '<span style="color:var(--ink-soft);">▫ DN skip</span>',
-  'duplicate':     '<span style="color:var(--ink-soft);">⧉ duplicate</span>',
-  'ai':            '<span style="color:#b8860b;">⚠ AI (old)</span>',
-  'failed':        '<span style="color:var(--red);">✕ not read</span>',
-};
-function isProblemEntry(e){ return e.path === 'failed' || e.path === 'direct-warn' || e.path === 'ai'; }
-
-// Shows, newest first, every file processed: how it was read and, when it wasn't a clean read, why.
-// This is the "why report" — the to-do list for improving the reader: anything under "Problems" is
-// either a bill to check by hand today, or a layout the reader should be taught.
-function renderParserReportPanel(){
-  let html = `<h3>Parser report</h3><p class="desc">Every file you've dropped in and how it was read: <b>✓ read</b> (clean — every self-check passed), <b>⚠ read check</b> (read, but some figures on the bill didn't agree with each other — possible misread), <b>✕ not read</b> (couldn't be read — check by hand), <b>▫ DN skip</b> and <b>⧉ duplicate</b> (skipped on purpose). "Problems" is the list to work through: check those bills by hand today, and send the files in so the reader can be fixed.</p>`;
-  if(!parserReport.length){
-    parserReportPanel.innerHTML = html + `<p class="desc">No files processed yet.</p>`;
-    return;
-  }
-  const counts = {};
-  parserReport.forEach(e => { counts[e.path] = (counts[e.path] || 0) + 1; });
-  const codeCounts = {};
-  parserReport.filter(isProblemEntry).forEach(e => { const c = e.code || (e.path === 'ai' ? 'AI_FALLBACK' : 'UNKNOWN'); codeCounts[c] = (codeCounts[c] || 0) + 1; });
-  const lastBatch = [...parserReport].reverse().find(e => e.batch);
-  const lastBatchId = lastBatch ? lastBatch.batch : null;
-  const filters = [
-    ['problems', 'Problems', parserReport.filter(isProblemEntry).length],
-    ['batch', 'Last batch', lastBatchId ? parserReport.filter(e => e.batch === lastBatchId).length : 0],
-    ['all', 'All', parserReport.length],
-  ];
-  const shown = parserReport.filter(e => parserReportFilter === 'all' ? true : parserReportFilter === 'batch' ? (lastBatchId && e.batch === lastBatchId) : isProblemEntry(e));
-
-  html += `<div class="pr-summary">${Object.keys(PARSER_BADGES).filter(k => counts[k]).map(k => `${PARSER_BADGES[k]} <b>${counts[k]}</b>`).join(' &nbsp;·&nbsp; ')}</div>`;
-  if(Object.keys(codeCounts).length){
-    html += `<div class="pr-codes">Problems by reason: ${Object.entries(codeCounts).sort((a, b) => b[1] - a[1]).map(([c, n]) => `<span class="code-tag" title="${escapeHtml(PARSER_CODE_HELP[c] || '')}">${escapeHtml(c)} × ${n}</span>`).join(' ')}</div>`;
-  }
-  html += `<div class="row pr-actions">
-    ${filters.map(([k, label, n]) => `<button class="ov-chip ${parserReportFilter === k ? 'active' : ''}" data-pr-filter="${k}">${label} <span class="n">${n}</span></button>`).join('')}
-    <span style="flex:1"></span>
-    <span class="fill-btn" id="copyParserReportBtn" style="cursor:pointer;">Copy problems</span>
-    <span class="fill-btn" id="csvParserReportBtn" style="cursor:pointer;">⬇ CSV</span>
-    <span class="fill-btn" id="clearParserReportBtn" style="cursor:pointer;">Clear report</span>
-  </div>`;
-  html += `<div class="code-scroll"><table class="code-table"><thead><tr><th style="width:92px;">Result</th><th>File</th><th>Why / what was found</th><th style="width:110px;">When</th></tr></thead><tbody>`;
-  if(!shown.length) html += `<tr><td colspan="4" style="color:var(--ink-soft);">Nothing here${parserReportFilter === 'problems' ? ' — no problems recorded ✓' : ''}.</td></tr>`;
-  shown.slice().reverse().forEach(entry => {
-    const help = entry.code && PR_HELP_INLINE.has(entry.code) ? `<div class="pr-help">${escapeHtml(PARSER_CODE_HELP[entry.code])}</div>` : '';
-    const warnings = (entry.warnings || []).length ? `<ul class="pr-warn">${entry.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')}</ul>` : '';
-    html += `<tr>
-      <td>${PARSER_BADGES[entry.path] || escapeHtml(entry.path)}${entry.code ? `<div class="code-tag">${escapeHtml(entry.code)}</div>` : ''}</td>
-      <td>${escapeHtml(entry.filename)}</td>
-      <td style="color:var(--ink-soft);">${entry.reason ? escapeHtml(entry.reason) : '—'}${warnings}${help}</td>
-      <td class="code" style="font-size:10.5px;">${escapeHtml(entry.date)}</td>
-    </tr>`;
-  });
-  html += `</tbody></table></div>`;
-  parserReportPanel.innerHTML = html;
-
-  parserReportPanel.querySelectorAll('[data-pr-filter]').forEach(b => b.addEventListener('click', () => { parserReportFilter = b.dataset.prFilter; renderParserReportPanel(); }));
-  document.getElementById('clearParserReportBtn').addEventListener('click', () => {
-    if(!confirm('Clear the whole Parser report?')) return;
-    parserReport = [];
-    savePersisted();
-    renderParserReportPanel();
-  });
-  document.getElementById('csvParserReportBtn').addEventListener('click', () => {
-    const rows = [['When', 'File', 'Result', 'Code', 'Reason', 'Self-check findings']];
-    parserReport.forEach(e => rows.push([e.date, e.filename, e.path, e.code || '', e.reason || '', (e.warnings || []).join(' | ')]));
-    downloadCsv(rows, 'parser-report-' + new Date().toISOString().slice(0, 10) + '.csv');
-  });
-  document.getElementById('copyParserReportBtn').addEventListener('click', e => {
-    const probs = parserReport.filter(isProblemEntry);
-    const text = probs.length
-      ? `Parser report — ${probs.length} problem file(s), ${APP_VERSION}\n\n` + probs.map(p => `${p.filename}\n  ${p.code || p.path}: ${p.reason || ''}` + ((p.warnings || []).length ? '\n' + p.warnings.map(w => '   - ' + w).join('\n') : '')).join('\n\n')
-      : 'No problems in the Parser report.';
-    const btn = e.target;
-    const done = () => { btn.textContent = '✓ Copied'; setTimeout(() => { btn.textContent = 'Copy problems'; }, 1400); };
-    if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, () => window.prompt('Copy this text:', text));
-    else window.prompt('Copy this text:', text);
-  });
-}
-
-function renderLogPanel(){
-  let html = `<h3>Discrepancy log</h3><p class="desc">A running record of bills you've checked — date, party, and how many discrepancies were found. Kept only for your own reference; nothing here is used for matching or remembered against future bills. Persists across reloads. Add entries from the "+ Add to log" button on a confirmed bill.</p>`;
-  if(!checkLog.length){
-    html += `<p class="desc">No entries yet.</p>`;
-  }else{
-    html += `<div class="code-scroll"><table class="code-table"><thead><tr><th style="width:20px;"></th><th>Date</th><th>Party</th><th>Discrepancies</th><th></th></tr></thead><tbody>`;
-    checkLog.slice().reverse().forEach(entry => {
-      const hasDetail = !!(entry.discrepancies && entry.discrepancies.length);
-      html += `<tr>
-        <td>${hasDetail ? `<span class="fill-btn" data-toggle-log="${entry.id}" style="cursor:pointer;">▶</span>` : ''}</td>
-        <td class="code">${escapeHtml(entry.date)}</td>
-        <td>${escapeHtml(entry.party)}</td>
-        <td class="code">${entry.discrepancyCount}</td>
-        <td style="white-space:nowrap;">
-          <span class="fill-btn" data-copy-log="${entry.id}" style="cursor:pointer;">Copy</span>
-          <span class="fill-btn" data-remove-log="${entry.id}" style="cursor:pointer; margin-left:4px;">✕</span>
-        </td>
-      </tr>`;
-      if(hasDetail){
-        html += `<tr data-log-detail="${entry.id}" style="display:none;">
-          <td></td>
-          <td colspan="4" style="font-size:11px; color:var(--ink-soft); padding:2px 6px 12px; line-height:1.6;">
-            ${entry.discrepancies.map(d => '• ' + escapeHtml(d)).join('<br>')}
-          </td>
-        </tr>`;
-      }
-    });
-    html += `</tbody></table></div>`;
-  }
-  logPanel.innerHTML = html;
-
-  logPanel.querySelectorAll('[data-toggle-log]').forEach(el => {
-    el.addEventListener('click', () => {
-      const id = el.dataset.toggleLog;
-      const detailRow = logPanel.querySelector(`[data-log-detail="${id}"]`);
-      if(!detailRow) return;
-      const showing = detailRow.style.display !== 'none';
-      detailRow.style.display = showing ? 'none' : 'table-row';
-      el.textContent = showing ? '▶' : '▼';
-    });
-  });
-  logPanel.querySelectorAll('[data-copy-log]').forEach(el => {
-    el.addEventListener('click', () => {
-      const entry = checkLog.find(e => e.id === el.dataset.copyLog);
-      if(!entry) return;
-      let text = `${entry.date} — ${entry.party} — ${entry.discrepancyCount} discrepanc${entry.discrepancyCount === 1 ? 'y' : 'ies'}`;
-      if(entry.discrepancies && entry.discrepancies.length){
-        text += '\n' + entry.discrepancies.map(d => '• ' + d).join('\n');
-      }
-      if(navigator.clipboard && navigator.clipboard.writeText){
-        navigator.clipboard.writeText(text);
-      }
-    });
-  });
-  logPanel.querySelectorAll('[data-remove-log]').forEach(el => {
-    el.addEventListener('click', () => {
-      checkLog = checkLog.filter(e => e.id !== el.dataset.removeLog);
-      savePersisted();
-      renderLogPanel();
-    });
-  });
-}
-
-// Gathers every discrepancy on a bill as plain-text lines — party mismatch, missing e-Way Bill,
-// subtotal mismatch, items dispatched but never billed, and every flagged line's own issue(s).
-// Shared by the discrepancy log (so an entry can be expanded to show what was actually wrong)
-// and could equally back the CSV export's per-row issue text — one source of truth for "what
-// counts as wrong with this bill" instead of two copies that can quietly drift apart.
-function gatherBillDiscrepancies(record){
-  const issues = [];
-  if(record.partyMismatch) issues.push('Party name mismatch');
-  if(record.ewayPresent === false) issues.push('e-Way Bill missing');
-  if(record.subtotalOk === false) issues.push('Subtotal mismatch — extraction may have missed/misread a line');
-
-  const block = (record.selectedBlockName && excelWorkbookData)
-    ? excelWorkbookData.blocks.find(b => b.customerName === record.selectedBlockName)
-    : null;
-  if(block){
-    const claimedCodes = new Set(record.items.map(r => r.excelCode).filter(Boolean).map(normalize));
-    block.activeRows.filter(r => !claimedCodes.has(normalize(r.code))).forEach(r => {
-      const label = findCodeLabel(r.code);
-      issues.push(`Item dispatched but not billed — Excel: ${r.code}${label ? ' — ' + label : ''} (qty ${r.qty !== null && r.qty !== undefined ? fmtQty(r.qty) : '—'})`);
-    });
-  }
-
-  record.items.forEach(row => {
-    const result = computeRow(row);
-    if(!result.flagged) return;
-    const lineIssues = [];
-    if(result.rateMismatch) lineIssues.push(result.rateWarning);
-    if(result.qtyMismatch) lineIssues.push(result.qtyWarning);
-    if(result.bundleWarning) lineIssues.push(result.bundleWarning);
-    if(result.itemMismatch) lineIssues.push(result.itemMismatchWarning);
-    if(result.notDispatched) lineIssues.push(result.notDispatchedWarning);
-    issues.push(`${row.description}: ${lineIssues.join('; ')}`);
-  });
-
-  return issues;
-}
-
-function addToLog(record){
-  const entry = {
-    id: 'log' + Date.now() + Math.random().toString(36).slice(2,7),
-    date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }),
-    party: record.parsed.partyName || record.filename,
-    discrepancyCount: record.currentDiscrepancyCount || 0,
-    discrepancies: gatherBillDiscrepancies(record)
-  };
-  checkLog.push(entry);
-  savePersisted();
-  if(logPanel.classList.contains('open')) renderLogPanel();
-}
-
-
-function ceilTo(value, decimals){
-  const f = Math.pow(10, decimals);
-  return Math.ceil((value - 1e-9) * f) / f;
-}
-function normalize(s){
-  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-}
 // Normalises the shorthand people actually type: stray spaces around the x, "lit" vs "lite",
 // 1/2 written as .5, curly quotes, trailing ft marks. Ported from TallySync's normCode() so both
 // tools tolerate the same typos/spacing quirks when matching a rate-sheet code against a reference row.
@@ -1179,7 +896,6 @@ function renderRulesPanel(){
     });
   }
 }
-rulesToggle.addEventListener('click', () => { rulesPanel.classList.toggle('open'); codesPanel.classList.remove('open'); logPanel.classList.remove('open'); parserReportPanel.classList.remove('open'); });
 
 // ===================== CODE REFERENCE PANEL =====================
 function renderCodesPanel(){
@@ -1291,81 +1007,6 @@ function renderCodeRows(filterText){
     });
   });
 }
-codesToggle.addEventListener('click', () => { codesPanel.classList.toggle('open'); rulesPanel.classList.remove('open'); logPanel.classList.remove('open'); parserReportPanel.classList.remove('open'); });
-logToggle.addEventListener('click', () => { logPanel.classList.toggle('open'); rulesPanel.classList.remove('open'); codesPanel.classList.remove('open'); parserReportPanel.classList.remove('open'); renderLogPanel(); });
-parserReportToggle.addEventListener('click', () => { parserReportPanel.classList.toggle('open'); rulesPanel.classList.remove('open'); codesPanel.classList.remove('open'); logPanel.classList.remove('open'); renderParserReportPanel(); });
-
-// ===================== PERSISTENCE =====================
-async function savePersisted(){
-  try{
-    await window.storage.set('btc_rules', JSON.stringify({rules, bundleRules}), false);
-    await window.storage.set('btc_item_codes_v2', JSON.stringify(itemCodes), false);
-    await window.storage.set('btc_check_log', JSON.stringify(checkLog), false);
-    // Capped to the most recent 300 — this is a rolling diagnostic feed, not a permanent record
-    // like the discrepancy log, so it doesn't need unbounded growth.
-    await window.storage.set('btc_parser_report', JSON.stringify(parserReport.slice(-PARSER_REPORT_CAP)), false);
-  }catch(e){}
-}
-async function loadPersisted(){
-  try{
-    const r = await window.storage.get('btc_rules', false);
-    if(r && r.value){
-      const p = JSON.parse(r.value);
-      // Merge rather than replace: any category key already known to the code keeps its label
-      // (labels aren't user-editable) but takes lengthFt/tax/decimals from what was saved; a
-      // category that's new in this version of the tool (e.g. added after a rules split) simply
-      // keeps its fresh default until the user edits it, instead of vanishing because the old
-      // saved blob didn't know about it yet.
-      if(p.rules){
-        Object.keys(defaultRules).forEach(key => {
-          if(p.rules[key]) rules[key] = { ...defaultRules[key], ...p.rules[key], label: defaultRules[key].label };
-        });
-      }
-      if(p.bundleRules) bundleRules = p.bundleRules;
-    }
-  }catch(e){}
-  try{
-    const c = await window.storage.get('btc_item_codes_v2', false);
-    if(c && c.value){ const p = JSON.parse(c.value); if(Array.isArray(p) && p.length) itemCodes = p; }
-    // v6.1: a code list saved by an earlier version replaces the built-in one, so codes added to the
-    // built-in list later would never reach it. Codes new in v6.1 are merged in once (skipping any code
-    // already present), then marked done so a code deliberately removed afterwards stays removed.
-    const seed = await window.storage.get('btc_codes_seed', false);
-    if(!seed || seed.value !== 'v6.1'){
-      V61_NEW_CODES.forEach(pair => {
-        if(!itemCodes.some(([code]) => normalize(code) === normalize(pair[0]))) itemCodes.push(pair.slice());
-      });
-      await window.storage.set('btc_codes_seed', 'v6.1', false);
-      await window.storage.set('btc_item_codes_v2', JSON.stringify(itemCodes), false);
-    }
-  }catch(e){}
-  try{
-    const l = await window.storage.get('btc_check_log', false);
-    if(l && l.value){ const p = JSON.parse(l.value); if(Array.isArray(p)) checkLog = p; }
-  }catch(e){}
-  try{
-    const pr = await window.storage.get('btc_parser_report', false);
-    if(pr && pr.value){ const p = JSON.parse(pr.value); if(Array.isArray(p)) parserReport = p; }
-  }catch(e){}
-  try{
-    const badge = document.getElementById('versionBadge');
-    if(badge) badge.textContent = APP_VERSION;
-    const fv = document.getElementById('footerVersion');
-    if(fv) fv.textContent = 'Invoice Audit Tool ' + APP_VERSION;
-    const v = await window.storage.get('btc_tool_version', false);
-    const lastVersion = (v && v.value) ? v.value : null;
-    if(lastVersion && lastVersion !== APP_VERSION){
-      const banner = document.createElement('div');
-      banner.style.cssText = 'max-width:900px;margin:0 auto 16px;padding:8px 14px;border:1px solid var(--gold);border-radius:4px;background:rgba(169,131,46,0.08);color:var(--ink);font-family:\'IBM Plex Mono\',monospace;font-size:12.5px;text-align:center;';
-      banner.textContent = 'Tool updated: ' + lastVersion + ' → ' + APP_VERSION;
-      const wrap = document.querySelector('.wrap');
-      if(wrap) wrap.insertBefore(banner, wrap.firstChild);
-    }
-    await window.storage.set('btc_tool_version', APP_VERSION, false);
-  }catch(e){}
-  renderRulesPanel();
-  renderCodesPanel();
-}
 
 // ===================== EXCEL PARSING =====================
 // Sheet is grouped: a row with only a name in column B = new customer block.
@@ -1417,81 +1058,6 @@ function parseExcelWorkbook(arrayBuffer){
   });
 
   return { blocks };
-}
-
-excelZone.addEventListener('click', () => excelInput.click());
-excelZone.addEventListener('dragover', e => { e.preventDefault(); excelZone.classList.add('drag'); });
-excelZone.addEventListener('dragleave', () => excelZone.classList.remove('drag'));
-excelZone.addEventListener('drop', e => {
-  e.preventDefault(); excelZone.classList.remove('drag');
-  const f = Array.from(e.dataTransfer.files).find(f => /\.xlsx?$/i.test(f.name));
-  if(f) loadExcelFile(f);
-});
-excelInput.addEventListener('change', e => {
-  const f = e.target.files[0];
-  if(f) loadExcelFile(f);
-  excelInput.value = '';
-});
-
-function loadExcelFile(file){
-  if(!window.XLSX){
-    excelStatus.className = 'excel-status show';
-    excelStatus.style.background = 'var(--red-bg)'; excelStatus.style.borderColor='var(--red)'; excelStatus.style.color='var(--red)';
-    excelStatus.textContent = `Couldn't read ${file.name}: the Excel reader didn't load (no internet when the page was opened, or the CDN is blocked). Reload the page and try again.`;
-    return;
-  }
-  const reader = new FileReader();
-  reader.onload = () => {
-    try{
-      const data = parseExcelWorkbook(reader.result);
-      if(!data.blocks.length){
-        excelStatus.className = 'excel-status show';
-        excelStatus.style.background = 'var(--red-bg)'; excelStatus.style.borderColor='var(--red)'; excelStatus.style.color='var(--red)';
-        excelStatus.textContent = `Couldn't find any customer blocks in ${file.name} — check the sheet layout.`;
-        return;
-      }
-      excelWorkbookData = data;
-      excelStatus.className = 'excel-status show';
-      excelStatus.style.background=''; excelStatus.style.borderColor=''; excelStatus.style.color='';
-      const totalItems = data.blocks.reduce((s,b) => s + b.rows.length, 0);
-      const skippedTotal = data.blocks.reduce((s,b) => s + b.skippedRows.length, 0);
-      excelStatus.innerHTML = `✓ Loaded <b>${escapeHtml(file.name)}</b> — ${data.blocks.length} customers, ${totalItems} rate lines${skippedTotal ? ` (${skippedTotal} marked 0 qty — not dispatched)` : ''}. <span class="clear-link" id="clearExcelLink">clear</span>`;
-      document.getElementById('clearExcelLink').addEventListener('click', () => {
-        excelWorkbookData = null;
-        excelStatus.classList.remove('show');
-        renderTally();
-      });
-      // Re-apply the freshly loaded sheet to every bill already on screen — this used to only
-      // re-render the match box, which for a bill that already had a customer picked meant the
-      // OLD rate/qty numbers silently stuck around even though the underlying Excel had changed.
-      // Now: re-find that same customer in the new data and fully recompute against it. If the
-      // customer name isn't in the new sheet at all (e.g. a typo got fixed), fall back to a fresh
-      // auto-guess instead of leaving a stale match in place. Already-confirmed bills get sent
-      // back to review, since "was correct against the old sheet" doesn't mean "correct now."
-      window.__records.forEach(record => {
-        if(record.selectedBlockName){
-          const newBlock = data.blocks.find(b => b.customerName === record.selectedBlockName);
-          record.itemMismatches = {};
-          record.reviewConfirmed = false;
-          if(newBlock){
-            applyExcelMatch(record, newBlock);
-          }else{
-            record.selectedBlockName = null;
-            record._autoGuessTried = false;
-            resetItemsToUnmatched(record);
-          }
-        }
-        const card = document.querySelector(`.invoice-card[data-record-id="${record.id}"]`);
-        if(card){ refreshMatchBox(record, card); recalcCard(card); }
-      });
-      renderTally();
-    }catch(err){
-      excelStatus.className = 'excel-status show';
-      excelStatus.style.background = 'var(--red-bg)'; excelStatus.style.borderColor='var(--red)'; excelStatus.style.color='var(--red)';
-      excelStatus.textContent = `Could not read ${file.name}: ` + (err.message || 'unknown error');
-    }
-  };
-  reader.readAsArrayBuffer(file);
 }
 
 // ===================== PARTY MATCHING =====================
@@ -1549,48 +1115,6 @@ function convertExcelQtyToBilledUnit(excelQty, row){
   return excelQty; // best-effort passthrough, unit mismatch — user should sanity check
 }
 
-// Height ft and Length ft feed the qty conversion above, but only at the moment a row gets
-// matched to an Excel line — editing either field afterward used to just recompute the rate,
-// leaving the Actual Qty box showing a stale number derived from the old (often auto-guessed,
-// sometimes wrong) height. This re-derives it from the same matched Excel row's raw qty every
-// time either field changes, so correcting the height/length actually corrects the qty too.
-// A no-op if this line isn't matched to an Excel row at all — never touches a value the person
-// typed into Actual Qty directly for an unmatched line.
-function refreshOrderedQtyFromExcel(record, row){
-  if(!row.excelCode || !record.selectedBlockName || !excelWorkbookData) return;
-  const block = excelWorkbookData.blocks.find(b => b.customerName === record.selectedBlockName);
-  if(!block) return;
-  const allExcelRows = [...block.activeRows, ...(block.skippedRows || [])];
-  const exRow = allExcelRows.find(r => normalize(r.code) === normalize(row.excelCode));
-  if(!exRow) return;
-  const converted = convertExcelQtyToBilledUnit(exRow.qty, row);
-  if(converted !== null) row.orderedQty = converted;
-}
-
-function applyExcelMatch(record, block){
-  const { assignment, candidates } = assignExcelRowsToBillLines(record, block);
-  record.items.forEach((row, idx) => {
-    const ci = assignment[idx];
-    const cand = ci === null || ci === undefined ? null : candidates[ci];
-    const exRow = cand ? cand.row : null;
-    row.excelCode = exRow ? exRow.code : null;
-    // A line paired with a qty=0/blank Excel row was billed despite being marked not-dispatched —
-    // flagged straight off its own matched row now, rather than inferred by a separate scan.
-    row.notDispatchedButBilled = !!(cand && cand.skipped);
-    row.notDispatchedCode = cand && cand.skipped ? exRow.code : null;
-    row.quotedRate = null;
-    row.orderedQty = null;
-    if(exRow){
-      if(exRow.rate !== null && !isNaN(exRow.rate)) row.quotedRate = exRow.rate;
-      const converted = convertExcelQtyToBilledUnit(exRow.qty, row);
-      if(converted !== null) row.orderedQty = converted;
-    }
-    // itemNameMismatch is intentionally left alone here — it's an independent human/system flag
-    // (set in updateItemPreview), never a gate on whether the rate/qty auto-fill happens.
-  });
-  checkNotDispatchedButBilled(record, block);
-}
-
 // Safety net for lines the assignment couldn't pair confidently: if such a line still looks like a
 // qty=0 Excel row, flag it anyway. Assigned lines are left alone — their own matched row already
 // decided this above, and re-deciding here could contradict it.
@@ -1610,10 +1134,628 @@ function checkNotDispatchedButBilled(record, block){
   });
 }
 
+const DET_COLS = { slno:[0,40], desc:[40,330], hsn:[330,380], qty:[380,440], rate:[440,483], per:[483,528], amt:[528,9999] };
+function detColOf(it){
+  const x = it.x;   // Ernakulam: placed by the text's LEFT edge (as calibrated on EKM bills)
+  for(const name in DET_COLS){ const [lo,hi] = DET_COLS[name]; if(x >= lo && x < hi) return name; }
+  return null;
+}
+
+// ===================== ROW COMPUTATION =====================
+function computeRow(row){
+  const rule = rules[row.category] || rules.direct;
+  const taxDivisor = 1 + (rule.tax / 100);
+  // A manually entered length overrides the category's default 12ft/50ft — for the rare item
+  // that genuinely comes in a non-standard length (e.g. a 100ft roll instead of the usual 50ft).
+  // Blank means "use the category default", same as it always did.
+  const lengthFt = (row.customLengthFt !== null && row.customLengthFt !== '' && !isNaN(row.customLengthFt))
+    ? row.customLengthFt
+    : rule.lengthFt;
+  let expectedRate = null;
+  if(row.quotedRate !== null && row.quotedRate !== '' && !isNaN(row.quotedRate)){
+    if(row.category === 'sheet_pics' || row.category === 'roll_mesh'){
+      const height = row.heightFt;
+      if(height !== null && !isNaN(height)){
+        expectedRate = ceilTo((height * lengthFt * row.quotedRate) / taxDivisor, rule.decimals);
+      }
+    }else{
+      expectedRate = ceilTo(row.quotedRate / taxDivisor, rule.decimals);
+    }
+  }
+  const expectedAmount = expectedRate !== null ? expectedRate * row.quantity : null;
+  // ---- Rate tolerance: fixed ₹ amount, chosen by category — NOT a % of the rate ----
+  // Roll (roll_mesh) & Sheet (sheet_pics): ₹1 flat, since these rates are height-multiplied and
+  // can legitimately land a rupee off after rounding.
+  // Direct, 5% items (Velcro/Shade Net) and Direct, flat rate (PCS/NOS/ROLL): ₹0.50 flat.
+  // Direct (KG / sq.ft): ₹0 — these should match exactly.
+  let tolerance = null;
+  if(expectedRate !== null){
+    if(row.category === 'sheet_pics' || row.category === 'roll_mesh'){
+      tolerance = 1;
+    }else if(row.category === 'direct_5pct' || row.category === 'direct_flat'){
+      tolerance = 0.5;
+    }else{
+      tolerance = 0; // direct (KG / sq.ft)
+    }
+  }
+  const rateMismatch = expectedRate !== null && Math.abs(row.rate - expectedRate) > tolerance;
+
+  let bundleWarning = null;
+  if((row.unit || '').toUpperCase().includes('KG')){
+    const info = getBundleInfo(row.description);
+    if(info.bundled){
+      const rem = row.quantity % info.weightKg;
+      if(rem > 0.05 && (info.weightKg - rem) > 0.05){
+        bundleWarning = `${row.quantity}kg doesn't divide evenly into ${info.weightKg}kg bundles`;
+      }
+    }
+  }
+
+  // ---- Qty tolerance: removed. Only a hairline epsilon survives, to absorb floating-point
+  // noise from unit conversions (e.g. bags->kg), not to forgive any real-world discrepancy. ----
+  // Skipped when notDispatchedButBilled is already set: that flag's own message says the same
+  // thing more clearly ("not dispatched but billed 3") than a generic "actual qty 0, billed
+  // qty is 3" would, so showing both was pure repetition.
+  let qtyMismatch = false, qtyWarning = null;
+  if(!row.notDispatchedButBilled && row.orderedQty !== null && !isNaN(row.orderedQty)){
+    const qtyEpsilon = 1e-6;
+    if(Math.abs(row.orderedQty - row.quantity) > qtyEpsilon){
+      qtyMismatch = true;
+      qtyWarning = `Actual qty ${fmtQty(row.orderedQty)}, billed qty is ${fmtQty(row.quantity)}`;
+    }
+  }
+
+  // rate-mismatch narration, so a screenshot alone explains the discrepancy
+  let rateWarning = null;
+  if(rateMismatch){
+    const diff = row.rate - expectedRate;
+    const pct = expectedRate !== 0 ? Math.abs(diff / expectedRate * 100) : 0;
+    rateWarning = diff > 0
+      ? `Billed ₹${fmt(row.rate)} vs expected ₹${fmt(expectedRate)} — over by ₹${fmt(Math.abs(diff))} (${pct.toFixed(1)}%)`
+      : `Billed ₹${fmt(row.rate)} vs expected ₹${fmt(expectedRate)} — short by ₹${fmt(Math.abs(diff))} (${pct.toFixed(1)}%)`;
+  }
+
+  const itemMismatch = !!row.itemNameMismatch;
+  const itemMismatchWarning = itemMismatch ? 'Item name Mismatch' : null;
+
+  // Simplified per feedback: the code reference (e.g. "1x1x10x5") reads as noise in a screenshot
+  // meant for someone else to read at a glance — just say what happened and how much.
+  const notDispatched = !!row.notDispatchedButBilled;
+  const notDispatchedWarning = notDispatched ? `Item not dispatched but billed ${fmtQty(row.quantity)}` : null;
+
+  const pending = expectedRate === null;
+
+  return { expectedRate, expectedAmount, flagged: rateMismatch || qtyMismatch || itemMismatch || notDispatched, pending, bundleWarning, qtyMismatch, qtyWarning, rateMismatch, rateWarning, itemMismatch, itemMismatchWarning, notDispatched, notDispatchedWarning };
+}
+
+// ---- Persistence of this branch's own settings (shared code saves the log, report, version) ----
+async function branchSavePersisted(){
+  await window.storage.set('btc_rules', JSON.stringify({rules, bundleRules}), false);
+  await window.storage.set('btc_item_codes_v2', JSON.stringify(itemCodes), false);
+}
+async function branchLoadPersisted(){
+  try{
+    const r = await window.storage.get('btc_rules', false);
+    if(r && r.value){
+      const p = JSON.parse(r.value);
+      // Merge rather than replace: any category key already known to the code keeps its label
+      // (labels aren't user-editable) but takes lengthFt/tax/decimals from what was saved; a
+      // category that's new in this version of the tool (e.g. added after a rules split) simply
+      // keeps its fresh default until the user edits it, instead of vanishing because the old
+      // saved blob didn't know about it yet.
+      if(p.rules){
+        Object.keys(defaultRules).forEach(key => {
+          if(p.rules[key]) rules[key] = { ...defaultRules[key], ...p.rules[key], label: defaultRules[key].label };
+        });
+      }
+      if(p.bundleRules) bundleRules = p.bundleRules;
+    }
+  }catch(e){}
+  try{
+    const c = await window.storage.get('btc_item_codes_v2', false);
+    if(c && c.value){ const p = JSON.parse(c.value); if(Array.isArray(p) && p.length) itemCodes = p; }
+    // v6.1: a code list saved by an earlier version replaces the built-in one, so codes added to the
+    // built-in list later would never reach it. Codes new in v6.1 are merged in once (skipping any code
+    // already present), then marked done so a code deliberately removed afterwards stays removed.
+    const seed = await window.storage.get('btc_codes_seed', false);
+    if(!seed || seed.value !== 'v6.1'){
+      V61_NEW_CODES.forEach(pair => {
+        if(!itemCodes.some(([code]) => normalize(code) === normalize(pair[0]))) itemCodes.push(pair.slice());
+      });
+      await window.storage.set('btc_codes_seed', 'v6.1', false);
+      await window.storage.set('btc_item_codes_v2', JSON.stringify(itemCodes), false);
+    }
+  }catch(e){}
+}
+
+// ============================ END BRANCH FORMULAS — ERNAKULAM ============================
+
+
+// Web build: Claude's window.storage doesn't exist on GitHub Pages, so this shim stores the same
+// keys in the browser's localStorage under this branch's own prefix (BRANCH.storagePrefix), so
+// each branch's settings and logs stay apart even though they share one website. If storage is blocked, saving silently does nothing, as before.
+window.storage = {
+  async get(key){ try{ const v = localStorage.getItem(BRANCH.storagePrefix + key); return v === null ? null : { key, value: v }; }catch(e){ return null; } },
+  async set(key, value){ try{ localStorage.setItem(BRANCH.storagePrefix + key, value); }catch(e){} return { key, value }; }
+};
+
+console.log('Invoice Audit Tool — ' + APP_VERSION);
+
+const excelZone = document.getElementById('excelZone');
+const excelInput = document.getElementById('excelInput');
+const excelStatus = document.getElementById('excelStatus');
+const tallyBar = document.getElementById('tallyBar');
+const screenshotToggle = document.getElementById('screenshotToggle');
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+const processingEl = document.getElementById('processing');
+const resultsEl = document.getElementById('results');
+const rulesToggle = document.getElementById('rulesToggle');
+const rulesPanel = document.getElementById('rulesPanel');
+const codesToggle = document.getElementById('codesToggle');
+const codesPanel = document.getElementById('codesPanel');
+const logToggle = document.getElementById('logToggle');
+const logPanel = document.getElementById('logPanel');
+const parserReportToggle = document.getElementById('parserReportToggle');
+const parserReportPanel = document.getElementById('parserReportPanel');
+const exportBar = document.getElementById('exportBar');
+const exportBtn = document.getElementById('exportBtn');
+
+screenshotToggle.addEventListener('click', () => {
+  document.body.classList.toggle('screenshot-mode');
+  screenshotToggle.style.background = document.body.classList.contains('screenshot-mode') ? 'var(--ink)' : '';
+  screenshotToggle.style.color = document.body.classList.contains('screenshot-mode') ? 'var(--paper-raised)' : '';
+  document.querySelectorAll('.invoice-card').forEach(card => recalcCard(card));
+});
+
+function renderTally(){
+  scheduleOverview();
+  if(!excelWorkbookData || !excelWorkbookData.blocks.length){
+    tallyBar.classList.remove('show');
+    return;
+  }
+  const billed = new Set(window.__records.filter(r => r.selectedBlockName).map(r => r.selectedBlockName));
+  const blockNames = excelWorkbookData.blocks.map(b => b.customerName);
+  const missing = blockNames.filter(name => !billed.has(name));
+  tallyBar.classList.add('show');
+  tallyBar.innerHTML = `${billed.size} of ${blockNames.length} Excel customers billed` +
+    (missing.length ? `<br><span class="missing">Not yet given for checking: ${missing.map(escapeHtml).join(', ')}</span>` : '');
+}
+
+// ---- Persisted state (survives reload, via artifact storage) ----
+// Party matches are intentionally NOT remembered across bills — every bill gets a fresh human check,
+// on both the party name and the item lines, every time.
+let excelWorkbookData = null; // { blocks: [{customerName, rows:[{code,qty,rate}]}] }
+
+// ---- Discrepancy log: persists across reloads (unlike bill records), just Date/Party/Count ----
+// Deliberately NOT used for party-name matching or any other functional purpose — plain audit text only.
+let checkLog = [];
+// Every file processed gets one entry here: which path read it (direct/AI/failed) and, for
+// anything other than a clean direct read, why. This is the "why report" — a persistent,
+// no-devtools-required answer to "why did this bill use the API" or "why did this bill fail",
+// so a pattern across a batch (e.g. several files rejected for the same reason) is visible at a
+// glance instead of requiring the console to be open at the moment it happened.
+let parserReport = [];
+const PARSER_REPORT_CAP = 500;
+// path: 'deterministic' (clean read) | 'direct-warn' (read, but the self-check found figures that
+// don't agree) | 'delivery-note' | 'duplicate' | 'failed' | 'ai' (only in entries from older versions)
+// extra: { code, warnings[], batch, defer } — defer skips the save so a 50-file batch saves once.
+function logParserEvent(filename, path, reason, extra){
+  extra = extra || {};
+  parserReport.push({
+    id: 'pr' + Date.now() + Math.random().toString(36).slice(2, 7),
+    filename,
+    date: new Date().toLocaleString('en-IN', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    path,
+    code: extra.code || null,
+    reason: reason || null,
+    warnings: extra.warnings || [],
+    batch: extra.batch || null
+  });
+  if(parserReport.length > PARSER_REPORT_CAP) parserReport = parserReport.slice(-PARSER_REPORT_CAP);
+  if(extra.defer) return;
+  savePersisted();
+  if(parserReportPanel.classList.contains('open')) renderParserReportPanel();
+}
+
+// What each failure code means and what to do — shown in the report so a code can be acted on
+// without needing to remember them.
+const PARSER_CODE_HELP = {
+  READ_CHECK:        'Read, but figures disagree — compare the listed lines with the PDF. If the PDF is right, the reader misread it: send the file in.',
+  NO_TABLE:          'No item table found. Different print format, or not a sales invoice — send the file in if it should have been read.',
+  NO_ROWS:           'Item table found but rows not recognised — the column layout differs. Send the file in.',
+  NOT_JAINWIRE:      'Not a Jain Wire sales invoice (no Jain Wire name, no item table).',
+  NO_TEXT:           'Scanned or photographed PDF — no text to read. Export the bill from Tally instead.',
+  PASSWORD:          'Password-protected PDF — export again without a password.',
+  DAMAGED:           'Damaged PDF — export again from Tally.',
+  TIMEOUT:           'Took too long to read — likely damaged. Export again.',
+  NOT_PDF:           'Not a PDF file.',
+  EMPTY:             'Empty file (0 bytes).',
+  UNREADABLE:        'Browser could not open the file.',
+  LIB_MISSING:       'PDF reader did not load — reload the page (needs internet once).',
+  OPEN_ERROR:        'PDF could not be opened.',
+  TEXT_ERROR:        'PDF text could not be extracted.',
+  PARSER_ERROR:      'Reader crashed on this layout — send the file in.',
+  INTERNAL:          'Unexpected error — send the file in.',
+  DUPLICATE_FILE:    'Same file dropped twice — skipped.',
+  DUPLICATE_INVOICE: 'Same invoice number already loaded — skipped.',
+  DELIVERY_NOTE:     'Delivery note — no rate check needed.',
+};
+
+// The help text is shown inline only where it says something the reason doesn't (what to do next);
+// for the rest it's on the code chips' hover text.
+const PR_HELP_INLINE = new Set(['READ_CHECK', 'NO_TABLE', 'NO_ROWS', 'PARSER_ERROR', 'INTERNAL']);
+let parserReportFilter = 'problems';
+const PARSER_BADGES = {
+  'deterministic': '<span style="color:var(--green);">✓ read</span>',
+  'direct-warn':   '<span style="color:#b8860b;">⚠ read check</span>',
+  'delivery-note': '<span style="color:var(--ink-soft);">▫ DN skip</span>',
+  'duplicate':     '<span style="color:var(--ink-soft);">⧉ duplicate</span>',
+  'ai':            '<span style="color:#b8860b;">⚠ AI (old)</span>',
+  'failed':        '<span style="color:var(--red);">✕ not read</span>',
+};
+function isProblemEntry(e){ return e.path === 'failed' || e.path === 'direct-warn' || e.path === 'ai'; }
+
+// Shows, newest first, every file processed: how it was read and, when it wasn't a clean read, why.
+// This is the "why report" — the to-do list for improving the reader: anything under "Problems" is
+// either a bill to check by hand today, or a layout the reader should be taught.
+function renderParserReportPanel(){
+  let html = `<h3>Parser report</h3><p class="desc">Every file you've dropped in and how it was read: <b>✓ read</b> (clean — every self-check passed), <b>⚠ read check</b> (read, but some figures on the bill didn't agree with each other — possible misread), <b>✕ not read</b> (couldn't be read — check by hand), <b>▫ DN skip</b> and <b>⧉ duplicate</b> (skipped on purpose). "Problems" is the list to work through: check those bills by hand today, and send the files in so the reader can be fixed.</p>`;
+  if(!parserReport.length){
+    parserReportPanel.innerHTML = html + `<p class="desc">No files processed yet.</p>`;
+    return;
+  }
+  const counts = {};
+  parserReport.forEach(e => { counts[e.path] = (counts[e.path] || 0) + 1; });
+  const codeCounts = {};
+  parserReport.filter(isProblemEntry).forEach(e => { const c = e.code || (e.path === 'ai' ? 'AI_FALLBACK' : 'UNKNOWN'); codeCounts[c] = (codeCounts[c] || 0) + 1; });
+  const lastBatch = [...parserReport].reverse().find(e => e.batch);
+  const lastBatchId = lastBatch ? lastBatch.batch : null;
+  const filters = [
+    ['problems', 'Problems', parserReport.filter(isProblemEntry).length],
+    ['batch', 'Last batch', lastBatchId ? parserReport.filter(e => e.batch === lastBatchId).length : 0],
+    ['all', 'All', parserReport.length],
+  ];
+  const shown = parserReport.filter(e => parserReportFilter === 'all' ? true : parserReportFilter === 'batch' ? (lastBatchId && e.batch === lastBatchId) : isProblemEntry(e));
+
+  html += `<div class="pr-summary">${Object.keys(PARSER_BADGES).filter(k => counts[k]).map(k => `${PARSER_BADGES[k]} <b>${counts[k]}</b>`).join(' &nbsp;·&nbsp; ')}</div>`;
+  if(Object.keys(codeCounts).length){
+    html += `<div class="pr-codes">Problems by reason: ${Object.entries(codeCounts).sort((a, b) => b[1] - a[1]).map(([c, n]) => `<span class="code-tag" title="${escapeHtml(PARSER_CODE_HELP[c] || '')}">${escapeHtml(c)} × ${n}</span>`).join(' ')}</div>`;
+  }
+  html += `<div class="row pr-actions">
+    ${filters.map(([k, label, n]) => `<button class="ov-chip ${parserReportFilter === k ? 'active' : ''}" data-pr-filter="${k}">${label} <span class="n">${n}</span></button>`).join('')}
+    <span style="flex:1"></span>
+    <span class="fill-btn" id="copyParserReportBtn" style="cursor:pointer;">Copy problems</span>
+    <span class="fill-btn" id="csvParserReportBtn" style="cursor:pointer;">⬇ CSV</span>
+    <span class="fill-btn" id="clearParserReportBtn" style="cursor:pointer;">Clear report</span>
+  </div>`;
+  html += `<div class="code-scroll"><table class="code-table"><thead><tr><th style="width:92px;">Result</th><th>File</th><th>Why / what was found</th><th style="width:110px;">When</th></tr></thead><tbody>`;
+  if(!shown.length) html += `<tr><td colspan="4" style="color:var(--ink-soft);">Nothing here${parserReportFilter === 'problems' ? ' — no problems recorded ✓' : ''}.</td></tr>`;
+  shown.slice().reverse().forEach(entry => {
+    const help = entry.code && PR_HELP_INLINE.has(entry.code) ? `<div class="pr-help">${escapeHtml(PARSER_CODE_HELP[entry.code])}</div>` : '';
+    const warnings = (entry.warnings || []).length ? `<ul class="pr-warn">${entry.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')}</ul>` : '';
+    html += `<tr>
+      <td>${PARSER_BADGES[entry.path] || escapeHtml(entry.path)}${entry.code ? `<div class="code-tag">${escapeHtml(entry.code)}</div>` : ''}</td>
+      <td>${escapeHtml(entry.filename)}</td>
+      <td style="color:var(--ink-soft);">${entry.reason ? escapeHtml(entry.reason) : '—'}${warnings}${help}</td>
+      <td class="code" style="font-size:10.5px;">${escapeHtml(entry.date)}</td>
+    </tr>`;
+  });
+  html += `</tbody></table></div>`;
+  parserReportPanel.innerHTML = html;
+
+  parserReportPanel.querySelectorAll('[data-pr-filter]').forEach(b => b.addEventListener('click', () => { parserReportFilter = b.dataset.prFilter; renderParserReportPanel(); }));
+  document.getElementById('clearParserReportBtn').addEventListener('click', () => {
+    if(!confirm('Clear the whole Parser report?')) return;
+    parserReport = [];
+    savePersisted();
+    renderParserReportPanel();
+  });
+  document.getElementById('csvParserReportBtn').addEventListener('click', () => {
+    const rows = [['When', 'File', 'Result', 'Code', 'Reason', 'Self-check findings']];
+    parserReport.forEach(e => rows.push([e.date, e.filename, e.path, e.code || '', e.reason || '', (e.warnings || []).join(' | ')]));
+    downloadCsv(rows, 'parser-report-' + new Date().toISOString().slice(0, 10) + '.csv');
+  });
+  document.getElementById('copyParserReportBtn').addEventListener('click', e => {
+    const probs = parserReport.filter(isProblemEntry);
+    const text = probs.length
+      ? `Parser report — ${probs.length} problem file(s), ${APP_VERSION}\n\n` + probs.map(p => `${p.filename}\n  ${p.code || p.path}: ${p.reason || ''}` + ((p.warnings || []).length ? '\n' + p.warnings.map(w => '   - ' + w).join('\n') : '')).join('\n\n')
+      : 'No problems in the Parser report.';
+    const btn = e.target;
+    const done = () => { btn.textContent = '✓ Copied'; setTimeout(() => { btn.textContent = 'Copy problems'; }, 1400); };
+    if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, () => window.prompt('Copy this text:', text));
+    else window.prompt('Copy this text:', text);
+  });
+}
+
+function renderLogPanel(){
+  let html = `<h3>Discrepancy log</h3><p class="desc">A running record of bills you've checked — date, party, and how many discrepancies were found. Kept only for your own reference; nothing here is used for matching or remembered against future bills. Persists across reloads. Add entries from the "+ Add to log" button on a confirmed bill.</p>`;
+  if(!checkLog.length){
+    html += `<p class="desc">No entries yet.</p>`;
+  }else{
+    html += `<div class="code-scroll"><table class="code-table"><thead><tr><th style="width:20px;"></th><th>Date</th><th>Party</th><th>Discrepancies</th><th></th></tr></thead><tbody>`;
+    checkLog.slice().reverse().forEach(entry => {
+      const hasDetail = !!(entry.discrepancies && entry.discrepancies.length);
+      html += `<tr>
+        <td>${hasDetail ? `<span class="fill-btn" data-toggle-log="${entry.id}" style="cursor:pointer;">▶</span>` : ''}</td>
+        <td class="code">${escapeHtml(entry.date)}</td>
+        <td>${escapeHtml(entry.party)}</td>
+        <td class="code">${entry.discrepancyCount}</td>
+        <td style="white-space:nowrap;">
+          <span class="fill-btn" data-copy-log="${entry.id}" style="cursor:pointer;">Copy</span>
+          <span class="fill-btn" data-remove-log="${entry.id}" style="cursor:pointer; margin-left:4px;">✕</span>
+        </td>
+      </tr>`;
+      if(hasDetail){
+        html += `<tr data-log-detail="${entry.id}" style="display:none;">
+          <td></td>
+          <td colspan="4" style="font-size:11px; color:var(--ink-soft); padding:2px 6px 12px; line-height:1.6;">
+            ${entry.discrepancies.map(d => '• ' + escapeHtml(d)).join('<br>')}
+          </td>
+        </tr>`;
+      }
+    });
+    html += `</tbody></table></div>`;
+  }
+  logPanel.innerHTML = html;
+
+  logPanel.querySelectorAll('[data-toggle-log]').forEach(el => {
+    el.addEventListener('click', () => {
+      const id = el.dataset.toggleLog;
+      const detailRow = logPanel.querySelector(`[data-log-detail="${id}"]`);
+      if(!detailRow) return;
+      const showing = detailRow.style.display !== 'none';
+      detailRow.style.display = showing ? 'none' : 'table-row';
+      el.textContent = showing ? '▶' : '▼';
+    });
+  });
+  logPanel.querySelectorAll('[data-copy-log]').forEach(el => {
+    el.addEventListener('click', () => {
+      const entry = checkLog.find(e => e.id === el.dataset.copyLog);
+      if(!entry) return;
+      let text = `${entry.date} — ${entry.party} — ${entry.discrepancyCount} discrepanc${entry.discrepancyCount === 1 ? 'y' : 'ies'}`;
+      if(entry.discrepancies && entry.discrepancies.length){
+        text += '\n' + entry.discrepancies.map(d => '• ' + d).join('\n');
+      }
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(text);
+      }
+    });
+  });
+  logPanel.querySelectorAll('[data-remove-log]').forEach(el => {
+    el.addEventListener('click', () => {
+      checkLog = checkLog.filter(e => e.id !== el.dataset.removeLog);
+      savePersisted();
+      renderLogPanel();
+    });
+  });
+}
+
+// Gathers every discrepancy on a bill as plain-text lines — party mismatch, missing e-Way Bill,
+// subtotal mismatch, items dispatched but never billed, and every flagged line's own issue(s).
+// Shared by the discrepancy log (so an entry can be expanded to show what was actually wrong)
+// and could equally back the CSV export's per-row issue text — one source of truth for "what
+// counts as wrong with this bill" instead of two copies that can quietly drift apart.
+function gatherBillDiscrepancies(record){
+  const issues = [];
+  if(record.partyMismatch) issues.push('Party name mismatch');
+  if(record.ewayPresent === false) issues.push('e-Way Bill missing');
+  (record.billIssues || []).forEach(x => issues.push(x));
+  if(record.subtotalOk === false) issues.push('Subtotal mismatch — extraction may have missed/misread a line');
+
+  const block = (record.selectedBlockName && excelWorkbookData)
+    ? excelWorkbookData.blocks.find(b => b.customerName === record.selectedBlockName)
+    : null;
+  if(block){
+    const claimedCodes = new Set(record.items.map(r => r.excelCode).filter(Boolean).map(normalize));
+    block.activeRows.filter(r => !claimedCodes.has(normalize(r.code))).forEach(r => {
+      const label = findCodeLabel(r.code);
+      issues.push(`Item dispatched but not billed — Excel: ${r.code}${label ? ' — ' + label : ''} (qty ${r.qty !== null && r.qty !== undefined ? fmtQty(r.qty) : '—'})`);
+    });
+  }
+
+  record.items.forEach(row => {
+    const result = computeRow(row);
+    if(!result.flagged) return;
+    const lineIssues = [];
+    if(result.rateMismatch) lineIssues.push(result.rateWarning);
+    if(result.qtyMismatch) lineIssues.push(result.qtyWarning);
+    if(result.bundleWarning) lineIssues.push(result.bundleWarning);
+    if(result.itemMismatch) lineIssues.push(result.itemMismatchWarning);
+    if(result.notDispatched) lineIssues.push(result.notDispatchedWarning);
+    (result.otherIssues || []).forEach(x => lineIssues.push(x));
+    issues.push(`${row.description}: ${lineIssues.join('; ')}`);
+  });
+
+  return issues;
+}
+
+function addToLog(record){
+  const entry = {
+    id: 'log' + Date.now() + Math.random().toString(36).slice(2,7),
+    date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }),
+    party: record.parsed.partyName || record.filename,
+    discrepancyCount: record.currentDiscrepancyCount || 0,
+    discrepancies: gatherBillDiscrepancies(record)
+  };
+  checkLog.push(entry);
+  savePersisted();
+  if(logPanel.classList.contains('open')) renderLogPanel();
+}
+
+
+function ceilTo(value, decimals){
+  const f = Math.pow(10, decimals);
+  return Math.ceil((value - 1e-9) * f) / f;
+}
+function normalize(s){
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+rulesToggle.addEventListener('click', () => { rulesPanel.classList.toggle('open'); codesPanel.classList.remove('open'); logPanel.classList.remove('open'); parserReportPanel.classList.remove('open'); });
+
+codesToggle.addEventListener('click', () => { codesPanel.classList.toggle('open'); rulesPanel.classList.remove('open'); logPanel.classList.remove('open'); parserReportPanel.classList.remove('open'); });
+logToggle.addEventListener('click', () => { logPanel.classList.toggle('open'); rulesPanel.classList.remove('open'); codesPanel.classList.remove('open'); parserReportPanel.classList.remove('open'); renderLogPanel(); });
+parserReportToggle.addEventListener('click', () => { parserReportPanel.classList.toggle('open'); rulesPanel.classList.remove('open'); codesPanel.classList.remove('open'); logPanel.classList.remove('open'); renderParserReportPanel(); });
+
+// ===================== PERSISTENCE =====================
+async function savePersisted(){
+  try{
+    await branchSavePersisted();   // this branch's own rules and code tables
+    await window.storage.set('btc_check_log', JSON.stringify(checkLog), false);
+    // Capped to the most recent 300 — this is a rolling diagnostic feed, not a permanent record
+    // like the discrepancy log, so it doesn't need unbounded growth.
+    await window.storage.set('btc_parser_report', JSON.stringify(parserReport.slice(-PARSER_REPORT_CAP)), false);
+  }catch(e){}
+}
+async function loadPersisted(){
+  await branchLoadPersisted();   // this branch's own rules and code tables
+  try{
+    const l = await window.storage.get('btc_check_log', false);
+    if(l && l.value){ const p = JSON.parse(l.value); if(Array.isArray(p)) checkLog = p; }
+  }catch(e){}
+  try{
+    const pr = await window.storage.get('btc_parser_report', false);
+    if(pr && pr.value){ const p = JSON.parse(pr.value); if(Array.isArray(p)) parserReport = p; }
+  }catch(e){}
+  try{
+    const badge = document.getElementById('versionBadge');
+    if(badge) badge.textContent = APP_VERSION;
+    const fv = document.getElementById('footerVersion');
+    if(fv) fv.textContent = 'Invoice Audit Tool ' + APP_VERSION;
+    const v = await window.storage.get('btc_tool_version', false);
+    const lastVersion = (v && v.value) ? v.value : null;
+    if(lastVersion && lastVersion !== APP_VERSION){
+      const banner = document.createElement('div');
+      banner.style.cssText = 'max-width:900px;margin:0 auto 16px;padding:8px 14px;border:1px solid var(--gold);border-radius:4px;background:var(--accent-bg);color:var(--ink);font-family:\'IBM Plex Mono\',monospace;font-size:12.5px;text-align:center;';
+      banner.textContent = 'Tool updated: ' + lastVersion + ' → ' + APP_VERSION;
+      const wrap = document.querySelector('.wrap');
+      if(wrap) wrap.insertBefore(banner, wrap.firstChild);
+    }
+    await window.storage.set('btc_tool_version', APP_VERSION, false);
+  }catch(e){}
+  renderRulesPanel();
+  renderCodesPanel();
+}
+
+excelZone.addEventListener('click', () => excelInput.click());
+excelZone.addEventListener('dragover', e => { e.preventDefault(); excelZone.classList.add('drag'); });
+excelZone.addEventListener('dragleave', () => excelZone.classList.remove('drag'));
+excelZone.addEventListener('drop', e => {
+  e.preventDefault(); excelZone.classList.remove('drag');
+  const f = Array.from(e.dataTransfer.files).find(f => /\.xlsx?$/i.test(f.name));
+  if(f) loadExcelFile(f);
+});
+excelInput.addEventListener('change', e => {
+  const f = e.target.files[0];
+  if(f) loadExcelFile(f);
+  excelInput.value = '';
+});
+
+function loadExcelFile(file){
+  if(!window.XLSX){
+    excelStatus.className = 'excel-status show';
+    excelStatus.style.background = 'var(--red-bg)'; excelStatus.style.borderColor='var(--red)'; excelStatus.style.color='var(--red)';
+    excelStatus.textContent = `Couldn't read ${file.name}: the Excel reader didn't load (no internet when the page was opened, or the CDN is blocked). Reload the page and try again.`;
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    try{
+      const data = parseExcelWorkbook(reader.result);
+      if(!data.blocks.length){
+        excelStatus.className = 'excel-status show';
+        excelStatus.style.background = 'var(--red-bg)'; excelStatus.style.borderColor='var(--red)'; excelStatus.style.color='var(--red)';
+        excelStatus.textContent = `Couldn't find any customer blocks in ${file.name} — check the sheet layout.`;
+        return;
+      }
+      excelWorkbookData = data;
+      excelStatus.className = 'excel-status show';
+      excelStatus.style.background=''; excelStatus.style.borderColor=''; excelStatus.style.color='';
+      const totalItems = data.blocks.reduce((s,b) => s + b.rows.length, 0);
+      const skippedTotal = data.blocks.reduce((s,b) => s + b.skippedRows.length, 0);
+      excelStatus.innerHTML = `✓ Loaded <b>${escapeHtml(file.name)}</b> — ${data.blocks.length} customers, ${totalItems} rate lines${skippedTotal ? ` (${skippedTotal} marked 0 qty — not dispatched)` : ''}. <span class="clear-link" id="clearExcelLink">clear</span>`;
+      document.getElementById('clearExcelLink').addEventListener('click', () => {
+        excelWorkbookData = null;
+        excelStatus.classList.remove('show');
+        renderTally();
+      });
+      // Re-apply the freshly loaded sheet to every bill already on screen — this used to only
+      // re-render the match box, which for a bill that already had a customer picked meant the
+      // OLD rate/qty numbers silently stuck around even though the underlying Excel had changed.
+      // Now: re-find that same customer in the new data and fully recompute against it. If the
+      // customer name isn't in the new sheet at all (e.g. a typo got fixed), fall back to a fresh
+      // auto-guess instead of leaving a stale match in place. Already-confirmed bills get sent
+      // back to review, since "was correct against the old sheet" doesn't mean "correct now."
+      window.__records.forEach(record => {
+        if(record.selectedBlockName){
+          const newBlock = data.blocks.find(b => b.customerName === record.selectedBlockName);
+          record.itemMismatches = {};
+          if(newBlock){
+            applyExcelMatch(record, newBlock);
+          }else{
+            record.selectedBlockName = null;
+            record._autoGuessTried = false;
+            resetItemsToUnmatched(record);
+          }
+        }
+        const card = document.querySelector(`.invoice-card[data-record-id="${record.id}"]`);
+        if(card){ refreshMatchBox(record, card); recalcCard(card); }
+      });
+      renderTally();
+    }catch(err){
+      excelStatus.className = 'excel-status show';
+      excelStatus.style.background = 'var(--red-bg)'; excelStatus.style.borderColor='var(--red)'; excelStatus.style.color='var(--red)';
+      excelStatus.textContent = `Could not read ${file.name}: ` + (err.message || 'unknown error');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// Height ft and Length ft feed the qty conversion above, but only at the moment a row gets
+// matched to an Excel line — editing either field afterward used to just recompute the rate,
+// leaving the Actual Qty box showing a stale number derived from the old (often auto-guessed,
+// sometimes wrong) height. This re-derives it from the same matched Excel row's raw qty every
+// time either field changes, so correcting the height/length actually corrects the qty too.
+// A no-op if this line isn't matched to an Excel row at all — never touches a value the person
+// typed into Actual Qty directly for an unmatched line.
+function refreshOrderedQtyFromExcel(record, row){
+  if(!row.excelCode || !record.selectedBlockName || !excelWorkbookData) return;
+  const block = excelWorkbookData.blocks.find(b => b.customerName === record.selectedBlockName);
+  if(!block) return;
+  const allExcelRows = [...block.activeRows, ...(block.skippedRows || [])];
+  const exRow = allExcelRows.find(r => normalize(r.code) === normalize(row.excelCode));
+  if(!exRow) return;
+  const converted = convertExcelQtyToBilledUnit(exRow.qty, row, exRow);
+  if(converted !== null) row.orderedQty = converted;
+}
+
+function applyExcelMatch(record, block){
+  const { assignment, candidates } = assignExcelRowsToBillLines(record, block);
+  record.items.forEach((row, idx) => {
+    const ci = assignment[idx];
+    const cand = ci === null || ci === undefined ? null : candidates[ci];
+    const exRow = cand ? cand.row : null;
+    row.excelCode = exRow ? exRow.code : null;
+    // A line paired with a qty=0/blank Excel row was billed despite being marked not-dispatched —
+    // flagged straight off its own matched row now, rather than inferred by a separate scan.
+    row.notDispatchedButBilled = !!(cand && cand.skipped);
+    row.notDispatchedCode = cand && cand.skipped ? exRow.code : null;
+    row.quotedRate = null;
+    row.orderedQty = null;
+    if(exRow){
+      if(exRow.rate !== null && !isNaN(exRow.rate)) row.quotedRate = exRow.rate;
+      const converted = convertExcelQtyToBilledUnit(exRow.qty, row, exRow);
+      if(converted !== null) row.orderedQty = converted;
+    }
+    // itemNameMismatch is intentionally left alone here — it's an independent human/system flag
+    // (set in updateItemPreview), never a gate on whether the rate/qty auto-fill happens.
+  });
+  checkNotDispatchedButBilled(record, block);
+}
+
 function updateItemPreview(card, record){
   const tbody = card.querySelector('[data-tbody]');
   if(!tbody) return;
-  const isFinal = !!record.reviewConfirmed;
   const block = (record.selectedBlockName && excelWorkbookData)
     ? excelWorkbookData.blocks.find(b => b.customerName === record.selectedBlockName)
     : null;
@@ -1624,7 +1766,7 @@ function updateItemPreview(card, record){
     const holder = tr.querySelector('[data-preview]');
     if(!holder) return;
 
-    if(isFinal || !block){ holder.innerHTML = ''; return; } // confirmed → clean for screenshot; no block → nothing to preview
+    if(!block){ holder.innerHTML = ''; return; } // no customer picked → nothing to compare against (hidden in screenshot mode by CSS)
 
     // The matched row is whatever content-based assignment (or a manual "did you mean" swap) put on
     // this line — looked up by code across both active and skipped rows, since a billed-anyway
@@ -1676,7 +1818,7 @@ function updateItemPreview(card, record){
         if(!suggestion) return;
         row.excelCode = suggestion.code;
         if(suggestion.rate !== null && !isNaN(suggestion.rate)) row.quotedRate = suggestion.rate;
-        const converted = convertExcelQtyToBilledUnit(suggestion.qty, row);
+        const converted = convertExcelQtyToBilledUnit(suggestion.qty, row, suggestion);
         if(converted !== null) row.orderedQty = converted;
         record.itemMismatches[idx] = false;
         row.itemNameMismatch = false;
@@ -1730,7 +1872,7 @@ function updateItemPreview(card, record){
         }else{
           row.excelCode = chosen.code;
           row.quotedRate = (chosen.rate !== null && !isNaN(chosen.rate)) ? chosen.rate : null;
-          const converted = convertExcelQtyToBilledUnit(chosen.qty, row);
+          const converted = convertExcelQtyToBilledUnit(chosen.qty, row, chosen);
           row.orderedQty = converted !== null ? converted : null;
           const isSkipped = (block.skippedRows || []).some(s => normalize(s.code) === normalize(chosen.code));
           row.notDispatchedButBilled = isSkipped;
@@ -1807,50 +1949,40 @@ function refreshMatchBox(record, card){
     const guess = guessBestBlock(buyerName, blocks);
     if(guess){
       record.selectedBlockName = guess.customerName;
+      record.partyAuto = true;
+      record.partyNote = guess._matchNote || null;
       record.itemMismatches = {};
       applyExcelMatch(record, guess);
     }
   }
 
-  // --- Reviewed & confirmed: compact banner, preview boxes hidden for a clean screenshot ---
-  if(record.reviewConfirmed){
-    const block = blocks.find(b => b.customerName === record.selectedBlockName);
-    box.className = 'match-box confirmed';
-    const partyTag = record.partyMismatch ? `<span class="party-mismatch-tag" style="margin-left:14px;">⚠ Party name Mismatch</span>` : '';
-    box.innerHTML = `
-      <div class="row">
-        <span class="confirmed-tag">✓ Matched: ${escapeHtml(record.selectedBlockName || '—')}</span>${partyTag}
-        <span class="change-link" id="changeMatchLink">change</span>
-      </div>
-    `;
-    box.querySelector('#changeMatchLink').addEventListener('click', () => {
-      record.reviewConfirmed = false;
-      refreshMatchBox(record, card);
-      recalcCard(card);
-    });
-    renderLineCountNote(card, record, block);
-    updateItemPreview(card, record);
-    return;
-  }
-
-  // --- Review step: customer dropdown is always live/re-choosable, party gets its own manual ✕ mark ---
-  box.className = 'match-box';
+  // v6.3: no separate "Confirm names" step. A confident automatic match counts straight away; an
+  // uncertain one leaves the dropdown on "select customer" and the bill waits for a pick. The
+  // dropdown stays live either way, so a wrong match is one change away.
+  box.className = 'match-box' + (record.selectedBlockName ? ' confirmed' : '');
+  const statusTag = record.selectedBlockName
+    ? `<span class="confirmed-tag">✓ ${record.partyAuto ? 'Matched automatically' : 'Picked by hand'}</span>${record.partyAuto && record.partyNote ? ` <span class="info-note" style="display:inline;">ⓘ ${escapeHtml(record.partyNote)}</span>` : ''}`
+    : `<span class="party-mismatch-tag">Pick the customer this bill belongs to</span>`;
   box.innerHTML = `
-    <div class="row">
+    <div class="row match-edit">
       <div class="field"><b>Order Name (Excel)</b>
         <select id="blockSelect">
           <option value="">— select customer —</option>
           ${blocks.map(b => `<option value="${escapeHtml(b.customerName)}" ${record.selectedBlockName === b.customerName ? 'selected' : ''}>${escapeHtml(b.customerName)}</option>`).join('')}
         </select>
       </div>
-      <label class="mismatch-toggle" style="margin-top:14px; font-size:12px;"><input type="checkbox" id="partyMismatchBox" ${record.partyMismatch ? 'checked' : ''}> ✕ mark party name mismatch</label>
+      <div class="match-status">${statusTag}</div>
+      <label class="mismatch-toggle"><input type="checkbox" id="partyMismatchBox" ${record.partyMismatch ? 'checked' : ''}> ✕ mark party name mismatch</label>
     </div>
-    <div class="manual-note">Check the item lines below — tick ✕ on any that don't look right, then confirm.</div>
-    <div class="row"><button id="confirmReviewBtn">✓ Confirm names</button></div>
+    <div class="row ss-only">
+      <span class="confirmed-tag">${record.selectedBlockName ? '✓ Matched: ' + escapeHtml(record.selectedBlockName) : 'Customer not picked'}</span>
+      ${record.partyMismatch ? '<span class="party-mismatch-tag" style="margin-left:14px;">⚠ Party name Mismatch</span>' : ''}
+    </div>
   `;
   box.querySelector('#blockSelect').addEventListener('change', e => {
     const val = e.target.value || null;
     record.selectedBlockName = val;
+    record.partyAuto = false;
     record.itemMismatches = {};
     if(val){
       const block = blocks.find(b => b.customerName === val);
@@ -1858,15 +1990,11 @@ function refreshMatchBox(record, card){
     }else{
       resetItemsToUnmatched(record);
     }
-    updateItemPreview(card, record);
+    refreshMatchBox(record, card);
     recalcCard(card);
   });
   box.querySelector('#partyMismatchBox').addEventListener('change', e => {
     record.partyMismatch = e.target.checked;
-    recalcCard(card);
-  });
-  box.querySelector('#confirmReviewBtn').addEventListener('click', () => {
-    record.reviewConfirmed = true;
     refreshMatchBox(record, card);
     recalcCard(card);
   });
@@ -1903,11 +2031,6 @@ if(window.pdfjsLib){
 //
 // Anything that doesn't match this exact layout is reported in the Parser report with the reason,
 // so it can be checked by hand on the day and the reader taught the new layout later.
-const DET_COLS = { slno:[0,40], desc:[40,330], hsn:[330,380], qty:[380,440], rate:[440,483], per:[483,528], amt:[528,9999] };
-function detColOf(x){
-  for(const name in DET_COLS){ const [lo,hi] = DET_COLS[name]; if(x >= lo && x < hi) return name; }
-  return null;
-}
 function detParseMoney(s){
   if(!s) return null;
   const m = String(s).replace(/,/g,'').match(/-?\d+(\.\d+)?/);
@@ -1957,7 +2080,10 @@ async function extractPdfLinesForParsing(pdfjsDoc){
     const content = await page.getTextContent();
     const items = content.items
       .filter(it => it.str && it.str.trim())
-      .map(it => ({ x: it.transform[4], y: it.transform[5], text: it.str.trim() }));
+      // "(cid:299)" is an unmapped font glyph (usually the rupee sign) — never real content, and left in
+      // place its number could be read instead of the figure beside it.
+      .map(it => ({ x: it.transform[4], y: it.transform[5], w: it.width || 0, text: it.str.replace(/\(cid:\d+\)/g, ' ').replace(/\s+/g, ' ').trim() }))
+      .filter(it => it.text);
     items.sort((a,b) => b.y - a.y || a.x - b.x); // pdf.js y increases upward: descending y = top to bottom
     const pageLines = [];
     const pageText = content.items.map(it => it.str).join(' ');
@@ -2061,12 +2187,12 @@ function parseInvoiceDeterministic(lines){
     if(!inTable) continue;
 
     const bucket = { slno:[], desc:[], hsn:[], qty:[], rate:[], per:[], amt:[] };
-    l.items.forEach(it => { const c = detColOf(it.x); if(c) bucket[c].push(it.text); });
+    l.items.forEach(it => { const c = detColOf(it); if(c) bucket[c].push(it.text); });
     const slnoText = bucket.slno.join('');
     const isNewRow = /^\d+$/.test(slnoText);
 
     if(isNewRow){
-      items.push({ slno: parseInt(slnoText, 10), description: bucket.desc.join(' '), qtyRaw: bucket.qty.join(' '), rateRaw: bucket.rate.join(' '), amtRaw: bucket.amt.join(' ') });
+      items.push({ slno: parseInt(slnoText, 10), description: bucket.desc.join(' '), qtyRaw: bucket.qty.join(' '), rateRaw: bucket.rate.join(' '), perRaw: bucket.per.join(' '), amtRaw: bucket.amt.join(' ') });
     }else if(bucket.desc.length && !bucket.amt.length && !bucket.hsn.length && !bucket.qty.length && items.length){
       const cont = bucket.desc.join(' ').trim();
       // v6.2: a line holding ONLY a number under an item ("2" under "GI Wire 18g", "5" under a
@@ -2080,6 +2206,8 @@ function parseInvoiceDeterministic(lines){
     }
   }
   const sellerFound = fullTextLines.some(t => /JAIN\s*WIRE/i.test(t));
+  // The seller's GSTIN is the first one printed on the page (the buyer's comes later, under Buyer).
+  const sellerGstin = (findVal(/GSTIN\/UIN\s*:?\s*([0-9A-Z]{15})/i) || '').toUpperCase() || null;
   if(!sawHeader){
     if(!sellerFound){
       return { data: null, code: 'NOT_JAINWIRE', reason: 'Neither "Jain Wire" nor a "Description of Goods" item table was found — this is probably not a Jain Wire sales invoice (a purchase bill, quotation, or another company\'s document).' };
@@ -2095,12 +2223,16 @@ function parseInvoiceDeterministic(lines){
     // just the "1" before the comma and leave ", sq.ft" as the unit.
     const qtyClean = it.qtyRaw.replace(/,/g, '');
     const qm = qtyClean.match(/-?\d+(\.\d+)?/);
-    const unit = qtyClean.replace(/-?\d+(\.\d+)?/, '').trim();
-    return { slno: it.slno, description: it.description.trim().slice(0, 60), quantity: qm ? parseFloat(qm[0]) : null, unit: unit || null, rate: detParseMoney(it.rateRaw), amount: detParseMoney(it.amtRaw) };
+    // Unit is printed after the quantity ("3 PICS"); when it isn't, fall back to the "per" column.
+    const unit = qtyClean.replace(/-?\d+(\.\d+)?/, '').trim() || String(it.perRaw || '').trim();
+    // On some layouts the HSN code lands just inside the description column ("… 12x5 73142010").
+    // No real description ends in a bare 6–8 digit run, so it's dropped from the tail.
+    const desc = it.description.replace(/\s+/g, ' ').trim().replace(/\s+\d{6,8}$/, '').trim();
+    return { slno: it.slno, description: BRANCH.descMaxChars ? desc.slice(0, BRANCH.descMaxChars) : desc, quantity: qm ? parseFloat(qm[0]) : null, unit: unit || null, rate: detParseMoney(it.rateRaw), amount: detParseMoney(it.amtRaw) };
   });
 
   return {
-    data: { partyName, invoiceNumber, invoiceDate, taxableTotal, grandTotal, eWayBillNumber, items: parsedItems,
+    data: { partyName, invoiceNumber, invoiceDate, taxableTotal, grandTotal, eWayBillNumber, sellerGstin, items: parsedItems,
             _check: { taxSum, taxLines, roundOff, sellerFound } },
     code: null, reason: null
   };
@@ -2171,93 +2303,6 @@ function sanityCheckInvoice(data){
   return w;
 }
 
-// ===================== ROW COMPUTATION =====================
-function computeRow(row){
-  const rule = rules[row.category] || rules.direct;
-  const taxDivisor = 1 + (rule.tax / 100);
-  // A manually entered length overrides the category's default 12ft/50ft — for the rare item
-  // that genuinely comes in a non-standard length (e.g. a 100ft roll instead of the usual 50ft).
-  // Blank means "use the category default", same as it always did.
-  const lengthFt = (row.customLengthFt !== null && row.customLengthFt !== '' && !isNaN(row.customLengthFt))
-    ? row.customLengthFt
-    : rule.lengthFt;
-  let expectedRate = null;
-  if(row.quotedRate !== null && row.quotedRate !== '' && !isNaN(row.quotedRate)){
-    if(row.category === 'sheet_pics' || row.category === 'roll_mesh'){
-      const height = row.heightFt;
-      if(height !== null && !isNaN(height)){
-        expectedRate = ceilTo((height * lengthFt * row.quotedRate) / taxDivisor, rule.decimals);
-      }
-    }else{
-      expectedRate = ceilTo(row.quotedRate / taxDivisor, rule.decimals);
-    }
-  }
-  const expectedAmount = expectedRate !== null ? expectedRate * row.quantity : null;
-  // ---- Rate tolerance: fixed ₹ amount, chosen by category — NOT a % of the rate ----
-  // Roll (roll_mesh) & Sheet (sheet_pics): ₹1 flat, since these rates are height-multiplied and
-  // can legitimately land a rupee off after rounding.
-  // Direct, 5% items (Velcro/Shade Net) and Direct, flat rate (PCS/NOS/ROLL): ₹0.50 flat.
-  // Direct (KG / sq.ft): ₹0 — these should match exactly.
-  let tolerance = null;
-  if(expectedRate !== null){
-    if(row.category === 'sheet_pics' || row.category === 'roll_mesh'){
-      tolerance = 1;
-    }else if(row.category === 'direct_5pct' || row.category === 'direct_flat'){
-      tolerance = 0.5;
-    }else{
-      tolerance = 0; // direct (KG / sq.ft)
-    }
-  }
-  const rateMismatch = expectedRate !== null && Math.abs(row.rate - expectedRate) > tolerance;
-
-  let bundleWarning = null;
-  if((row.unit || '').toUpperCase().includes('KG')){
-    const info = getBundleInfo(row.description);
-    if(info.bundled){
-      const rem = row.quantity % info.weightKg;
-      if(rem > 0.05 && (info.weightKg - rem) > 0.05){
-        bundleWarning = `${row.quantity}kg doesn't divide evenly into ${info.weightKg}kg bundles`;
-      }
-    }
-  }
-
-  // ---- Qty tolerance: removed. Only a hairline epsilon survives, to absorb floating-point
-  // noise from unit conversions (e.g. bags->kg), not to forgive any real-world discrepancy. ----
-  // Skipped when notDispatchedButBilled is already set: that flag's own message says the same
-  // thing more clearly ("not dispatched but billed 3") than a generic "actual qty 0, billed
-  // qty is 3" would, so showing both was pure repetition.
-  let qtyMismatch = false, qtyWarning = null;
-  if(!row.notDispatchedButBilled && row.orderedQty !== null && !isNaN(row.orderedQty)){
-    const qtyEpsilon = 1e-6;
-    if(Math.abs(row.orderedQty - row.quantity) > qtyEpsilon){
-      qtyMismatch = true;
-      qtyWarning = `Actual qty ${fmtQty(row.orderedQty)}, billed qty is ${fmtQty(row.quantity)}`;
-    }
-  }
-
-  // rate-mismatch narration, so a screenshot alone explains the discrepancy
-  let rateWarning = null;
-  if(rateMismatch){
-    const diff = row.rate - expectedRate;
-    const pct = expectedRate !== 0 ? Math.abs(diff / expectedRate * 100) : 0;
-    rateWarning = diff > 0
-      ? `Billed ₹${fmt(row.rate)} vs expected ₹${fmt(expectedRate)} — over by ₹${fmt(Math.abs(diff))} (${pct.toFixed(1)}%)`
-      : `Billed ₹${fmt(row.rate)} vs expected ₹${fmt(expectedRate)} — short by ₹${fmt(Math.abs(diff))} (${pct.toFixed(1)}%)`;
-  }
-
-  const itemMismatch = !!row.itemNameMismatch;
-  const itemMismatchWarning = itemMismatch ? 'Item name Mismatch' : null;
-
-  // Simplified per feedback: the code reference (e.g. "1x1x10x5") reads as noise in a screenshot
-  // meant for someone else to read at a glance — just say what happened and how much.
-  const notDispatched = !!row.notDispatchedButBilled;
-  const notDispatchedWarning = notDispatched ? `Item not dispatched but billed ${fmtQty(row.quantity)}` : null;
-
-  const pending = expectedRate === null;
-
-  return { expectedRate, expectedAmount, flagged: rateMismatch || qtyMismatch || itemMismatch || notDispatched, pending, bundleWarning, qtyMismatch, qtyWarning, rateMismatch, rateWarning, itemMismatch, itemMismatchWarning, notDispatched, notDispatchedWarning };
-}
-
 // ===================== RENDERING =====================
 function renderCard(record, container, prepend){
   const { parsed } = record;
@@ -2286,7 +2331,7 @@ function renderCard(record, container, prepend){
     <div class="stamp pending" data-stamp>Awaiting rates</div>
     <div class="meta">
       <p class="vendor">${escapeHtml(parsed.partyName || record.filename)}</p>
-      <p class="subline"><span class="seq-tag">#${record.seq}</span> ${escapeHtml(parsed.invoiceNumber || 'No invoice #')} · ${escapeHtml(parsed.invoiceDate || 'no date read')} · <span class="file-tag" title="File name">${escapeHtml(record.filename)}</span></p>
+      <p class="subline"><span class="seq-tag">#${record.seq}</span> ${escapeHtml(parsed.invoiceNumber || 'No invoice #')} · ${escapeHtml(parsed.invoiceDate || 'no date read')} · <span class="file-tag" title="File name">${escapeHtml(record.filename)}</span>${sellerEntityLabel(parsed) && Object.keys(BRANCH.gstins).length > 1 ? ` · <span class="entity-tag" title="Seller GSTIN ${escapeHtml(parsed.sellerGstin)}">${escapeHtml(sellerEntityLabel(parsed))}</span>` : ''}</p>
     </div>
     <div class="total-check-row">${totalCheckHtml}</div>
     <div data-read-check></div>
@@ -2345,7 +2390,7 @@ function renderCard(record, container, prepend){
     tr.dataset.idx = idx;
     tr.innerHTML = `
       <td class="desc">${escapeHtml(row.description)}<div data-preview></div></td>
-      <td class="num"><input class="cell-input" data-field="orderedQty" value="${row.orderedQty !== null ? row.orderedQty : ''}" style="width:64px;"></td>
+      <td class="num"><input class="cell-input" data-field="orderedQty" value="${row.orderedQty !== null ? row.orderedQty : ''}" style="width:64px;"><div class="qty-calc" data-qty-calc></div></td>
       <td class="num">${row.quantity}</td>
       <td>${escapeHtml(row.unit || '')}</td>
       <td class="num">${fmt(row.rate)}</td>
@@ -2367,6 +2412,7 @@ function renderCard(record, container, prepend){
     });
     tr.querySelector('[data-field="category"]').addEventListener('change', e => {
       row.category = e.target.value;
+      if(BRANCH.qtyFollowsCategory) refreshOrderedQtyFromExcel(record, row);
       recalcCard(card);
     });
     tr.querySelector('[data-field="heightFt"]').addEventListener('input', e => {
@@ -2493,6 +2539,18 @@ function recalcCard(card){
     statusCell.className = 'num status ' + (showPending ? 'pending' : (result.flagged ? 'bad' : 'ok'));
     statusCell.textContent = showPending ? '…' : (result.flagged ? '✗' : '✓');
 
+    const calcEl = tr.querySelector('[data-qty-calc]');
+    if(calcEl) calcEl.textContent = result.qtyCalc || '';
+    tr.querySelectorAll('.other-note, .info-note').forEach(n => n.remove());
+    (result.infoNotes || []).forEach(x => {
+      const n = document.createElement('div'); n.className = 'info-note'; n.textContent = 'ⓘ ' + x;
+      tr.querySelector('.desc').appendChild(n);
+    });
+    (result.otherIssues || []).forEach(x => {
+      const n = document.createElement('div'); n.className = 'other-note'; n.textContent = '⚠ ' + x;
+      tr.querySelector('.desc').appendChild(n);
+    });
+
     let noteEl = tr.querySelector('.bundle-note');
     if(result.bundleWarning){
       if(!noteEl){ noteEl = document.createElement('div'); noteEl.className = 'bundle-note'; tr.querySelector('.desc').appendChild(noteEl); }
@@ -2532,6 +2590,7 @@ function recalcCard(card){
   if(missingItems.length){ anyFlag = true; discrepancyCount += missingItems.length; }
   if(record.subtotalOk === false) discrepancyCount++;
   if(record.ewayPresent === false) discrepancyCount++;
+  discrepancyCount += (record.billIssues || []).length;
 
   // Summary banner at the top of the bill: every discrepancy on this bill collected into one
   // block, right under the party name. This is what makes a single screenshot readable — the
@@ -2552,13 +2611,13 @@ function recalcCard(card){
 
   const stamp = card.querySelector('[data-stamp]');
   stamp.classList.remove('ok','bad','pending');
-  const nameCheckPending = !!excelWorkbookData && !record.reviewConfirmed;
+  const nameCheckPending = !!excelWorkbookData && !record.selectedBlockName;
   // A missing e-Way Bill or a subtotal mismatch is a discrepancy in its own right: it's already in
   // the count and the summary banner, so the stamp must not say "Verified" while it stands.
-  if(record.subtotalOk === false || record.ewayPresent === false) anyFlag = true;
+  if(record.subtotalOk === false || record.ewayPresent === false || (record.billIssues || []).length) anyFlag = true;
   const readCheckOpen = (record.readWarnings || []).length > 0 && !record.readWarningsAck;
   let statusKind;
-  if(nameCheckPending){ stamp.classList.add('pending'); stamp.textContent = 'Name Check Pending'; statusKind = 'name'; }
+  if(nameCheckPending){ stamp.classList.add('pending'); stamp.textContent = 'Pick customer'; statusKind = 'name'; }
   else if(anyPending){ stamp.classList.add('pending'); stamp.textContent = 'Awaiting rates'; statusKind = 'rates'; }
   else if(anyFlag){ stamp.classList.add('bad'); stamp.textContent = `Discrepancy (${discrepancyCount}) ⚠`; statusKind = 'discrepancy'; }
   else if(readCheckOpen){ stamp.classList.add('pending'); stamp.textContent = 'Check the read ⚠'; statusKind = 'readcheck'; }
@@ -2585,6 +2644,7 @@ exportBtn.addEventListener('click', () => {
     if(record.ewayPresent === false){
       rows.push([record.filename, record.parsed.invoiceNumber || '', '(whole bill)', '', '', '', '', '', '', '', 'e-Way Bill missing']);
     }
+    (record.billIssues || []).forEach(x => rows.push([record.filename, record.parsed.invoiceNumber || '', '(whole bill)', '', '', '', '', '', '', '', x]));
     const block = (record.selectedBlockName && excelWorkbookData)
       ? excelWorkbookData.blocks.find(b => b.customerName === record.selectedBlockName)
       : null;
@@ -2603,6 +2663,7 @@ exportBtn.addEventListener('click', () => {
       if(result.bundleWarning) issues.push(result.bundleWarning);
       if(result.itemMismatch) issues.push(result.itemMismatchWarning);
       if(result.notDispatched) issues.push(result.notDispatchedWarning);
+      (result.otherIssues || []).forEach(x => issues.push(x));
       rows.push([record.filename, record.parsed.invoiceNumber || '', row.description, rules[row.category]?.label || row.category, row.quantity, row.orderedQty, row.unit, row.rate, result.expectedRate ?? '', row.amount, issues.join('; ')]);
     });
   });
@@ -2711,6 +2772,19 @@ async function readBillFile(file){
   }
 }
 
+// Seller GSTIN must be one of this branch's own (BRANCH.gstins). A bill from another entity in the
+// batch is flagged rather than checked silently against the wrong rate sheet.
+function sellerGstinIssues(parsed){
+  const g = parsed.sellerGstin;
+  if(!g) return [];
+  if(BRANCH.gstins[g]) return [];
+  return [`Seller GSTIN ${g} is not a ${BRANCH.name} GSTIN — check this bill belongs to this branch`];
+}
+function sellerEntityLabel(parsed){
+  const g = parsed.sellerGstin;
+  return g && BRANCH.gstins[g] ? BRANCH.gstins[g] : null;
+}
+
 function buildRecord(file, outcome, seq, key){
   const parsed = outcome.parsed;
   const items = (parsed.items || []).map(it => ({
@@ -2729,10 +2803,12 @@ function buildRecord(file, outcome, seq, key){
     notDispatchedButBilled: false,
     notDispatchedCode: null
   }));
+  items.forEach(branchInitRow);   // branch hook: sets up per-line size fields from the description
   return {
     id: 'r' + Date.now() + Math.random().toString(36).slice(2, 7),
     seq, fileKey: key, filename: file.name, parsed, items,
-    selectedBlockName: null, partyMismatch: false, reviewConfirmed: false, itemMismatches: {}, _autoGuessTried: false,
+    billIssues: sellerGstinIssues(parsed),
+    selectedBlockName: null, partyMismatch: false, itemMismatches: {}, _autoGuessTried: false,
     extractionPath: 'deterministic',
     readWarnings: outcome.warnings || [], readWarningsAck: false
   };
@@ -2916,7 +2992,7 @@ function scheduleOverview(){
 const STATUS_META = {
   verified:    { label: 'Verified ✓',          cls: 'ok' },
   discrepancy: { label: 'Discrepancy',         cls: 'bad' },
-  name:        { label: 'Name check pending',  cls: 'pending' },
+  name:        { label: 'Customer not picked', cls: 'pending' },
   rates:       { label: 'Awaiting rates',      cls: 'pending' },
   readcheck:   { label: 'Check the read',      cls: 'pending' },
   failed:      { label: 'Not read',            cls: 'bad' },
