@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Invoice Audit Tool — Ernakulam</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2214%22%20fill%3D%22%231E2A38%22/%3E%3Cg%20stroke%3D%22%23A9832E%22%20stroke-opacity%3D%22.6%22%20stroke-width%3D%222%22%3E%3Cpath%20d%3D%22M8%2020H56M8%2032H56M8%2044H56M20%208V56M32%208V56M44%208V56%22/%3E%3C/g%3E%3Crect%20x%3D%2217%22%20y%3D%2210%22%20width%3D%2226%22%20height%3D%2236%22%20rx%3D%223%22%20fill%3D%22%23FAF7EF%22/%3E%3Cpath%20d%3D%22M22%2018H38M22%2024H38M22%2030H32%22%20stroke%3D%22%231E2A38%22%20stroke-opacity%3D%22.45%22%20stroke-width%3D%222.5%22%20stroke-linecap%3D%22round%22/%3E%3Ccircle%20cx%3D%2243%22%20cy%3D%2244%22%20r%3D%2212%22%20fill%3D%22%23A9832E%22%20stroke%3D%22%231E2A38%22%20stroke-width%3D%223%22/%3E%3Cpath%20d%3D%22M37.5%2044.5l4%204%207.5-8%22%20fill%3D%22none%22%20stroke%3D%22%23fff%22%20stroke-width%3D%223.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22/%3E%3C/svg%3E">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
@@ -361,6 +362,8 @@
     font-family:'IBM Plex Mono', monospace; margin-top: 30px; line-height:1.6;
   }
 
+  .brand-logo{ display:inline-block; width:34px; height:34px; vertical-align:-6px; margin-right:12px; }
+  .brand-logo svg{ width:100%; height:100%; display:block; }
   .version-badge{
     display:inline-block; vertical-align: middle; margin-left:10px;
     font-family:'IBM Plex Mono', monospace; font-size: 12px; font-weight:600;
@@ -455,7 +458,7 @@
 
   <header>
     <p class="eyebrow">Ernakulam · Invoice · Rate · Audit</p>
-    <h1>Invoice Audit Tool <span class="version-badge" id="versionBadge">v6.3</span></h1>
+    <h1><span class="brand-logo"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#1E2A38"/><g stroke="#A9832E" stroke-opacity=".6" stroke-width="2"><path d="M8 20H56M8 32H56M8 44H56M20 8V56M32 8V56M44 8V56"/></g><rect x="17" y="10" width="26" height="36" rx="3" fill="#FAF7EF"/><path d="M22 18H38M22 24H38M22 30H32" stroke="#1E2A38" stroke-opacity=".45" stroke-width="2.5" stroke-linecap="round"/><circle cx="43" cy="44" r="12" fill="#A9832E" stroke="#1E2A38" stroke-width="3"/><path d="M37.5 44.5l4 4 7.5-8" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Invoice Audit Tool <span class="version-badge" id="versionBadge">v6.3</span></h1>
     <p>Upload today's rate Excel, then drop all the bill PDFs at once. The Bill overview lists every file with its status, so you can work through what needs attention and jump straight to it. Each bill is matched to its Excel customer automatically when the name is clear; quoted rates and ordered quantities then auto-fill from the sheet — you only pick or type anything where it isn't sure.</p>
   </header>
 
