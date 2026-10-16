@@ -1,0 +1,1679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Invoice Audit Tool — Calicut</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ============================================================================
+   JAIN WIRE NETTING CORPORATION — CALICUT (CLT) BRANCH
+   INVOICE AUDIT TOOL  ·  v1.1
+
+   WHAT THIS DOES
+   Checks Tally-generated CLT sales invoices (PDF) against the day's loading
+   plan (Excel rate sheet). Both files are read entirely inside this page. No
+   server, no upload, no model call, no tokens — the PDF is read by exact text
+   position off the page, calibrated to Jain Wire's own Tally invoice template.
+
+   HOW CLT BILLING DIFFERS FROM EKM (the important part)
+   The loading plan gives quantity as a COUNT OF PIECES ("nos"), not sq.ft.
+   The bill converts that count to square feet using the item's own size:
+
+     SHEETS   billed sq.ft = nos x L x H          e.g. 10 nos of 12x4 -> 480 sq.ft
+     ROLLS    billed sq.ft = nos x 50ft x width   e.g.  2 nos of 4ft   -> 400 sq.ft
+     NOS/KG   billed qty   = nos as written       (perf sheet, PVC mesh, net, wire)
+
+   Because the size is already folded into the QUANTITY, the RATE check is a
+   plain per-sq.ft comparison with no height/length multiplication:
+
+     expected rate = plan rate / 1.18      (plan rates are tax-inclusive)
+
+   READING THE PLAN SHORTHAND
+     Sheet:  1x1x12x4 4mm lite
+             ^^^ aperture (the square between wires)
+                 ^^^^ L x H in feet
+                      ^^^^^^^^ thickness code
+     Roll:   1x1x10x4 lite
+             ^^^ aperture
+                 ^^ gauge (10g)
+                    ^ width in feet
+                      ^^^^ lite version of that gauge
+
+   A SHEET ALWAYS carries an "Nmm" thickness token after the dimensions.
+   A ROLL never does. That single token is the only thing separating the two,
+   because the third number means feet on a sheet and gauge on a roll — so
+   "1x1x12x5 4mm lite" is a 12ft x 5ft sheet while "1/2x1/2x12x4 lite" is a
+   12-gauge roll. If a plan row is ever written without the mm token the tool
+   reads it as a roll; the Type dropdown on that line forces it back to Sheet.
+
+   (Background, not used by the tool: sheet 4mm uses 3.2mm wire and 4mm lite
+   uses 3.0mm; roll 10g uses 2.2mm wire and 10g lite a mix of 2.2/2.0mm.)
+   ========================================================================== */
+
+:root{
+  --paper:#E9F0F6;
+  --paper-raised:#FFFFFF;
+  --paper-sunk:#F4F8FB;
+  --ink:#0E2334;
+  --ink-soft:#54708A;
+  --ink-faint:#8AA0B4;
+  --rule:#D5E2EC;
+  --rule-strong:#B2C8DA;
+  --accent:#1D6CA6;
+  --accent-deep:#15537F;
+  --accent-bg:#E2EFF8;
+  --green:#0F7048;
+  --green-bg:#E1F1E9;
+  --red:#AB271D;
+  --red-bg:#FAE8E6;
+  --amber:#875600;
+  --amber-bg:#F9EFDA;
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--paper);
+  color:var(--ink);
+  font-family:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased;
+}
+.mono{font-family:'IBM Plex Mono',ui-monospace,Consolas,monospace}
+.num{font-family:'IBM Plex Mono',ui-monospace,Consolas,monospace;font-variant-numeric:tabular-nums}
+.shell{max-width:1520px;margin:0 auto;padding:34px 26px 90px}
+
+/* ---------------- masthead ---------------- */
+.eyebrow{font-family:'IBM Plex Mono',monospace;font-size:11.5px;letter-spacing:.22em;
+  color:var(--accent);margin:0 0 10px}
+h1.display{font-family:'Fraunces',Georgia,serif;font-size:40px;font-weight:600;
+  letter-spacing:-.015em;margin:0 0 12px;line-height:1.05}
+p.lede{margin:0;max-width:66ch;font-size:14.5px;color:var(--ink-soft)}
+
+/* ---------------- panel toggles ---------------- */
+.toggles{display:flex;flex-wrap:wrap;gap:8px;margin:20px 0}
+.toggle-btn{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink-soft);
+  background:var(--paper-raised);border:1px solid var(--rule);border-radius:3px;
+  padding:7px 12px;cursor:pointer}
+.toggle-btn:hover{border-color:var(--accent);color:var(--accent)}
+.toggle-btn.on{border-color:var(--accent);color:var(--accent);background:var(--accent-bg)}
+button:focus-visible,select:focus-visible,input:focus-visible,.dropzone:focus-visible{
+  outline:2px solid var(--accent);outline-offset:2px}
+
+.panel{background:var(--paper-raised);border:1px solid var(--rule);border-radius:4px;
+  padding:18px 20px;margin-bottom:22px;display:none}
+.panel.open{display:block}
+.panel h3{font-family:'Fraunces',Georgia,serif;font-size:17px;font-weight:600;margin:0 0 4px}
+.panel .desc{font-size:12.5px;color:var(--ink-soft);margin:0 0 14px;line-height:1.55;max-width:84ch}
+.panel .desc code{background:var(--accent-bg);color:var(--accent-deep);padding:1px 4px;
+  border-radius:2px;font-family:'IBM Plex Mono',monospace;font-size:11.5px}
+
+/* ---------------- drop zones ---------------- */
+.zones{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:12px}
+@media(max-width:760px){.zones{grid-template-columns:1fr}}
+.dropzone{background:var(--paper-raised);border:2px dashed var(--rule-strong);border-radius:4px;
+  padding:26px 24px;text-align:center;cursor:pointer;
+  transition:border-color .15s ease,background .15s ease}
+.dropzone:hover,.dropzone.drag{border-color:var(--accent);background:var(--accent-bg)}
+.dropzone.filled{border-style:solid;border-color:var(--green);background:var(--green-bg)}
+.dropzone.busy{border-color:var(--accent);background:var(--accent-bg);cursor:progress}
+.dropzone .icon{font-size:20px;margin-bottom:6px;color:var(--accent)}
+.dropzone .main{font-weight:600;font-size:14px;margin-bottom:3px}
+.dropzone .sub{font-size:12px;color:var(--ink-soft)}
+.dropzone input{display:none}
+
+.footnote{font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--ink-faint);
+  text-align:center;line-height:1.75;margin:18px auto 26px;max-width:96ch}
+
+/* ---------------- status strips ---------------- */
+.strip{font-family:'IBM Plex Mono',monospace;font-size:12.5px;border-radius:4px;
+  padding:10px 14px;margin-bottom:14px;display:none;line-height:1.6}
+.strip.show{display:block}
+.strip.good{color:var(--green);background:var(--green-bg);border:1px solid var(--green)}
+.strip.bad{color:var(--red);background:var(--red-bg);border:1px solid var(--red)}
+.strip .clear-link{margin-left:10px;color:var(--red);cursor:pointer;text-decoration:underline}
+
+/* ---------------- summary ---------------- */
+.summary{background:var(--paper-raised);border:1px solid var(--rule);border-left:4px solid var(--accent);
+  border-radius:4px;padding:16px 18px;margin-bottom:22px}
+.summary.clean{border-left-color:var(--green)}
+.summary.dirty{border-left-color:var(--red)}
+.summary h2{font-family:'Fraunces',Georgia,serif;font-size:19px;font-weight:600;margin:0 0 12px}
+.figs{display:flex;gap:30px;flex-wrap:wrap}
+.fig b{display:block;font-family:'IBM Plex Mono',monospace;font-size:21px;font-weight:600;line-height:1.2}
+.fig span{font-size:11.5px;color:var(--ink-soft)}
+.fig.bad b{color:var(--red)}
+.fig.ok b{color:var(--green)}
+.summary ul{margin:12px 0 0;padding-left:18px;font-size:12.5px;color:var(--ink-soft)}
+.summary li{margin-bottom:3px}
+
+/* ---------------- bill card ---------------- */
+.card{background:var(--paper-raised);border:1px solid var(--rule);border-radius:4px;
+  margin-bottom:18px;overflow:hidden}
+.card.flagged{border-left:4px solid var(--red)}
+.card.clean{border-left:4px solid var(--green)}
+.card.blocked{border-left:4px solid var(--amber)}
+.card>header{padding:14px 18px;border-bottom:1px solid var(--rule);display:flex;
+  justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap}
+.card>header h3{font-family:'Fraunces',Georgia,serif;font-size:18px;font-weight:600;margin:0}
+.card>header .meta{margin-top:3px;font-size:12px;color:var(--ink-soft)}
+.card>header .meta b{font-family:'IBM Plex Mono',monospace;font-weight:500;color:var(--ink)}
+.card>header .partysel{display:flex;flex-direction:column;gap:4px;align-items:flex-end;
+  font-size:11.5px;color:var(--ink-soft)}
+
+.tablescroll{overflow-x:auto}
+table.lines{border-collapse:collapse;width:100%;font-size:12.5px;min-width:1220px}
+table.lines th{text-align:left;font-family:'IBM Plex Mono',monospace;font-weight:500;font-size:10.5px;
+  letter-spacing:.05em;color:var(--ink-soft);padding:8px;border-bottom:1px solid var(--rule-strong);
+  white-space:nowrap;background:var(--paper-sunk)}
+table.lines td{padding:7px 8px;border-bottom:1px solid var(--rule);vertical-align:top}
+table.lines tbody tr:hover{background:var(--paper-sunk)}
+table.lines td.r,table.lines th.r{text-align:right}
+table.lines .desc{min-width:220px;line-height:1.35}
+table.lines .desc small{display:block;color:var(--ink-faint);font-size:11px;
+  font-family:'IBM Plex Mono',monospace}
+table.lines tr.extra{background:var(--red-bg)}
+table.lines tr.missing{background:var(--amber-bg)}
+.cellbad{color:var(--red);font-weight:600}
+.dim{color:var(--ink-faint)}
+.calc{display:block;font-size:10.5px;color:var(--ink-faint);font-family:'IBM Plex Mono',monospace}
+
+.pill{display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:10px;
+  padding:2px 6px;border-radius:2px;white-space:nowrap}
+.pill.ok{background:var(--green-bg);color:var(--green)}
+.pill.bad{background:var(--red-bg);color:var(--red)}
+.pill.warn{background:var(--amber-bg);color:var(--amber)}
+.pill.info{background:var(--accent-bg);color:var(--accent-deep)}
+.pills{display:flex;flex-direction:column;gap:3px;align-items:flex-start}
+
+select,input[type=number],input[type=text]{font-family:inherit;font-size:12.5px;
+  border:1px solid var(--rule-strong);background:#fff;border-radius:3px;padding:4px 6px;
+  color:var(--ink);max-width:100%}
+button.act{font-family:'IBM Plex Mono',monospace;font-size:12px;background:var(--paper-raised);
+  border:1px solid var(--rule-strong);border-radius:3px;padding:6px 12px;cursor:pointer;color:var(--ink)}
+button.act:hover{border-color:var(--accent);color:var(--accent)}
+
+.totals{padding:12px 18px;border-top:1px solid var(--rule);background:var(--paper-sunk);
+  display:flex;gap:28px;flex-wrap:wrap;font-size:12.5px}
+.totals b{font-family:'IBM Plex Mono',monospace;font-weight:600}
+.cardfoot{padding:11px 18px;border-top:1px solid var(--rule);display:flex;gap:8px;flex-wrap:wrap}
+
+.empty{background:var(--paper-raised);border:1px dashed var(--rule-strong);border-radius:4px;
+  padding:40px 22px;text-align:center;color:var(--ink-soft);font-size:13px}
+.empty b{display:block;font-family:'Fraunces',Georgia,serif;font-size:17px;color:var(--ink);
+  font-weight:600;margin-bottom:6px}
+
+.rulegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px 20px}
+.rulegrid label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--ink-soft)}
+.rulegrid input{width:100%}
+
+table.codes{border-collapse:collapse;font-size:12px;width:100%;max-width:660px;margin-top:8px}
+table.codes th{text-align:left;font-family:'IBM Plex Mono',monospace;font-size:10px;
+  letter-spacing:.05em;color:var(--ink-soft);border-bottom:1px solid var(--rule-strong);padding:6px 8px}
+table.codes td{padding:5px 8px;border-bottom:1px solid var(--rule);font-family:'IBM Plex Mono',monospace}
+table.codes input{width:100%;border:1px solid transparent;background:transparent;padding:2px 4px}
+table.codes input:focus{background:#fff;border-color:var(--accent)}
+h4.sub{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.06em;
+  color:var(--ink-soft);margin:20px 0 0}
+
+table.log{border-collapse:collapse;width:100%;font-size:12px}
+table.log th{text-align:left;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.05em;
+  color:var(--ink-soft);padding:6px 8px;border-bottom:1px solid var(--rule-strong)}
+table.log td{padding:6px 8px;border-bottom:1px solid var(--rule);vertical-align:top}
+
+/* ---------------- screenshot mode ----------------
+   A screenshot exists to show what is wrong. Controls go, fully clean bills
+   collapse to their header and totals, and inside a flagged bill the lines that
+   matched are hidden so the problem isn't pushed off the bottom of the photo. */
+body.shot .no-shot{display:none!important}
+body.shot select,body.shot input[type=number]{appearance:none;-webkit-appearance:none;
+  border:none;background:transparent;padding:0;pointer-events:none;font-size:12.5px}
+body.shot .tablescroll{overflow-x:visible}
+body.shot table.lines{min-width:0}
+body.shot .card.clean .tablescroll{display:none}
+body.shot .card:not(.clean) tr.line-ok{display:none}
+
+@media print{.no-shot{display:none!important}body{background:#fff}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <a href="../" class="no-shot" style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink-soft);">← Branches</a>
+
+  <p class="eyebrow">CALICUT · LOADING PLAN · AUDIT · v1.1</p>
+  <h1 class="display">Invoice Audit Tool</h1>
+  <p class="lede">Drop today's loading plan, then the bill PDFs. Each bill is matched to its party and
+    every line to its plan row, then quantity, rate and amount are checked against the sheet. You only
+    touch the lines it can't place on its own.</p>
+
+  <div class="toggles no-shot">
+    <button class="toggle-btn" data-panel="panelRules">Rules and tolerances</button>
+    <button class="toggle-btn" data-panel="panelCodes">Item code reference</button>
+    <button class="toggle-btn" data-panel="panelLog">Discrepancy log</button>
+    <button class="toggle-btn" id="btnShot">Screenshot mode</button>
+    <button class="toggle-btn" id="btnCsv">Export CSV</button>
+    <button class="toggle-btn" id="btnClear">Clear bills</button>
+  </div>
+
+  <div class="panel no-shot" id="panelRules">
+    <h3>Rules and tolerances</h3>
+    <p class="desc">Rate tolerances are in rupees, not percent. A plan rate of <code>19</code> works out
+      to <code>19 / 1.18 = 16.102</code>, which Tally may print as either <code>16.10</code> or
+      <code>16.11</code> — the ₹0.02 sq.ft tolerance accepts both. Quantity tolerances are absolute for
+      the same reason: a percentage would let a large-volume line hide a real shortfall.</p>
+    <div class="rulegrid" id="ruleGrid"></div>
+  </div>
+
+  <div class="panel no-shot" id="panelCodes">
+    <h3>Item code reference</h3>
+    <p class="desc">Used to confirm that a plan row and a bill line are the same product. Seeded only
+      from the CLT bills of 28-Aug-2026 — extend it as you confirm more codes. An unknown code never
+      blocks a match, it just stops the tool vouching for the thickness. Two worth remembering: sheet
+      <code>2x2</code> is 65×65mm on the thin grades but <b>60×60mm</b> on the 7mm, so every 60×60 line
+      gets a badge on the audit; and <code>1/2x1/2</code> 10g lite bills at <b>1.9mm</b> here where EKM
+      writes 2.0mm.</p>
+    <h4 class="sub">Aperture — the square between wires</h4>
+    <table class="codes" id="tblAperture"></table>
+    <h4 class="sub">Sheet thickness codes</h4>
+    <table class="codes" id="tblSheetTh"></table>
+    <h4 class="sub">Roll gauge codes — aperture · gauge · lite</h4>
+    <table class="codes" id="tblRollTh"></table>
+    <div style="margin-top:14px"><button class="act" id="btnResetCodes">Reset code tables</button></div>
+  </div>
+
+  <div class="panel" id="panelLog">
+    <h3>Discrepancy log</h3>
+    <p class="desc">Kept in this browser between sessions. Bills themselves are never stored, and the
+      same issue is never logged twice.</p>
+    <div id="logBody"></div>
+    <div style="margin-top:14px" class="no-shot">
+      <button class="act" id="btnLogCsv">Export log CSV</button>
+      <button class="act" id="btnLogClear">Clear log</button>
+    </div>
+  </div>
+
+  <div class="zones no-shot">
+    <div class="dropzone" id="zoneExcel" tabindex="0" role="button" aria-label="Load the loading plan spreadsheet">
+      <div class="icon mono">&#9636;</div>
+      <div class="main">Drop today's loading plan here</div>
+      <div class="sub">.xlsx — party name on its own row, then item, nos, rate</div>
+      <input type="file" id="fileExcel" accept=".xlsx,.xls,.xlsm">
+    </div>
+    <div class="dropzone" id="zonePdf" tabindex="0" role="button" aria-label="Load bill PDFs">
+      <div class="icon mono">&#9638;</div>
+      <div class="main">Drop bill PDFs here, or click to choose</div>
+      <div class="sub">One or more .pdf invoices — e-Way Bill pages are skipped</div>
+      <input type="file" id="filePdf" accept="application/pdf" multiple>
+    </div>
+  </div>
+
+  <p class="footnote">Bills are read by exact text position inside this page · nothing is uploaded, no
+    model is called, no tokens are spent.<br>
+    Every bill gets a fresh party and item match, every time. Only the rules, the code tables and the
+    discrepancy log are remembered between sessions.</p>
+
+  <div class="strip" id="stripExcel"></div>
+  <div class="strip bad" id="stripErr"></div>
+
+  <div id="summary"></div>
+  <div id="cards"></div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+"use strict";
+if (window.pdfjsLib) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+}
+
+/* ==========================================================================
+   1. DEFAULTS AND PERSISTENCE
+   Only rules, code tables and the discrepancy log survive a reload. Bill data
+   and party matches deliberately do not — a stale party match carried into the
+   next day's audit is worse than re-picking it.
+   ========================================================================== */
+
+const CLT_GSTIN = "32BLMPJ2728L1ZX";   // the Calicut selling entity
+
+const DEFAULT_RULES = {
+  taxDivisor: 1.18,          // plan rates are tax-inclusive; bill rate = plan / 1.18
+  rollLengthFt: 50,          // standard coil length; override per line where a coil differs
+  tolRateSqft: 0.02,         // rupees per sq.ft
+  tolRateNos: 1.00,          // rupees per piece
+  tolRateKg: 0.05,           // rupees per kg
+  tolQtySqft: 0.5,           // sq.ft
+  tolQtyNos: 0.01,           // pieces
+  tolQtyKg: 0.05,            // kg
+  tolAmount: 1.00            // rupees on the line amount
+};
+
+const RULE_LABELS = {
+  taxDivisor:   "Tax divisor",
+  rollLengthFt: "Standard roll length (ft)",
+  tolRateSqft:  "Rate tolerance · sq.ft (₹)",
+  tolRateNos:   "Rate tolerance · nos (₹)",
+  tolRateKg:    "Rate tolerance · kg (₹)",
+  tolQtySqft:   "Qty tolerance · sq.ft",
+  tolQtyNos:    "Qty tolerance · nos",
+  tolQtyKg:     "Qty tolerance · kg",
+  tolAmount:    "Line amount tolerance (₹)"
+};
+
+// Aperture code -> the millimetre pair Tally prints. A code may legitimately have
+// more than one, e.g. sheet 2x2 is 65x65 on thin grades and 60x60 on the 7mm.
+const DEFAULT_APERTURE = {
+  sheet: { "1x1": [[40,40]], "2x2": [[65,65],[60,60]] },
+  roll:  { "1x1": [[40,40]], "2x2": [[60,60]], "1/2x1/2": [[17,17]], "1x1/2": [[40,20]] }
+};
+
+// Thickness codes, confirmed against real CLT bills. Sheets keyed by the printed
+// code; rolls keyed by aperture|gauge|lite because the same gauge lands on a
+// different wire depending on the aperture.
+const DEFAULT_THICKNESS = {
+  sheet: { "4mm lite": 3.0, "5mm lite": 3.8, "7mm": 6.8 },
+  roll: {
+    "1x1|8|lite": 2.6,
+    "1x1|10|lite": 2.1,
+    "2x2|10|": 2.3,
+    "1x1/2|10|": 2.3,
+    "1/2x1/2|10|lite": 1.9,
+    "1/2x1/2|12|lite": 1.6,
+    "1/2x1/2|14|": 1.4
+  }
+};
+
+const LS_KEY = "jainwire.clt.audit.v1";
+
+const state = {
+  rules: Object.assign({}, DEFAULT_RULES),
+  aperture: JSON.parse(JSON.stringify(DEFAULT_APERTURE)),
+  thickness: JSON.parse(JSON.stringify(DEFAULT_THICKNESS)),
+  plan: null,      // { fileName, blocks:[{ party, rows:[...] }] }
+  bills: [],
+  log: []
+};
+
+function savePersisted() {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify({
+      rules: state.rules, aperture: state.aperture, thickness: state.thickness, log: state.log
+    }));
+  } catch (e) { /* file:// origins can refuse storage; the tool still works, it just forgets */ }
+}
+function loadPersisted() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return;
+    const o = JSON.parse(raw);
+    // Merge rather than replace, so a rule added in a later version keeps its default.
+    if (o.rules) Object.keys(DEFAULT_RULES).forEach(k => {
+      if (typeof o.rules[k] === "number" && isFinite(o.rules[k])) state.rules[k] = o.rules[k];
+    });
+    if (o.aperture && o.aperture.sheet && o.aperture.roll) state.aperture = o.aperture;
+    if (o.thickness && o.thickness.sheet && o.thickness.roll) state.thickness = o.thickness;
+    if (Array.isArray(o.log)) state.log = o.log;
+  } catch (e) { /* corrupt storage: fall back to defaults rather than break */ }
+}
+
+/* ==========================================================================
+   2. SMALL HELPERS
+   ========================================================================== */
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, c =>
+    ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+}
+function money(n) {
+  if (n == null || !isFinite(n)) return "—";
+  return n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function qtyFmt(n) {
+  if (n == null || !isFinite(n)) return "—";
+  return (Math.abs(n - Math.round(n)) < 0.0005)
+    ? Math.round(n).toLocaleString("en-IN")
+    : n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 3 });
+}
+function rate2(n) {
+  if (n == null || !isFinite(n)) return "—";
+  return n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function alnum(s) { return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, ""); }
+function bigrams(s) {
+  const out = [];
+  for (let i = 0; i < s.length - 1; i++) out.push(s.slice(i, i + 2));
+  return out;
+}
+// Dice coefficient on character bigrams. Content-based, so items pair by what
+// they say rather than the order they happen to sit in.
+function dice(a, b) {
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  const A = bigrams(a), B = bigrams(b);
+  if (!A.length || !B.length) return 0;
+  const pool = B.slice();
+  let hits = 0;
+  for (const g of A) {
+    const i = pool.indexOf(g);
+    if (i >= 0) { pool.splice(i, 1); hits++; }
+  }
+  return (2 * hits) / (A.length + B.length);
+}
+function toNum(v) {
+  if (v == null) return null;
+  const m = String(v).replace(/,/g, "").match(/-?\d+(\.\d+)?/);
+  return m ? parseFloat(m[0]) : null;
+}
+
+let errorList = [];
+function showError(title, detail) {
+  errorList.push(title + (detail ? " — " + detail : ""));
+  const el = document.getElementById("stripErr");
+  el.innerHTML = errorList.map(e => esc(e)).join("<br>");
+  el.classList.add("show");
+}
+function clearErrors() {
+  errorList = [];
+  const el = document.getElementById("stripErr");
+  el.innerHTML = ""; el.classList.remove("show");
+}
+
+/* ==========================================================================
+   3. READING THE LOADING PLAN
+   The sheet is blocks separated by blank rows. A row carrying text and no
+   numbers starts a new party; a row carrying text plus two numbers is an item.
+   Column letters are not assumed — the first text cell is the item, the first
+   two numeric cells are nos and rate.
+   ========================================================================== */
+
+function parsePlanWorkbook(arrayBuffer) {
+  const wb = XLSX.read(arrayBuffer, { type: "array" });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  if (!ws) throw new Error("the workbook has no readable sheet");
+  const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
+
+  const blocks = [];
+  let cur = null;
+
+  aoa.forEach((row, i) => {
+    const cells = (row || []).map(c => (c == null ? "" : String(c).trim()));
+    const filled = cells.map((c, ci) => ({ c, ci })).filter(o => o.c !== "");
+    if (!filled.length) return;
+
+    const isNumeric = o => /^-?[\d.,]+$/.test(o.c) && isFinite(parseFloat(o.c.replace(/,/g, "")));
+    const nums  = filled.filter(isNumeric);
+    const texts = filled.filter(o => !isNumeric(o));
+
+    if (texts.length >= 1 && nums.length >= 2) {
+      if (!cur) { cur = { party: "(unnamed block)", rows: [], excelRow: i + 1 }; blocks.push(cur); }
+      cur.rows.push({
+        name: texts[0].c,
+        nos: parseFloat(nums[0].c.replace(/,/g, "")),
+        rate: parseFloat(nums[1].c.replace(/,/g, "")),
+        excelRow: i + 1,
+        spec: parsePlanSpec(texts[0].c),
+        kindOverride: null,   // Type dropdown can force Sheet or Roll
+        rollLenFt: null       // per-row coil length override
+      });
+    } else if (texts.length >= 1 && nums.length === 0) {
+      cur = { party: texts.map(t => t.c).join(" "), rows: [], excelRow: i + 1 };
+      blocks.push(cur);
+    }
+  });
+
+  return blocks.filter(b => b.rows.length);
+}
+
+/* --- plan shorthand -> structured spec -------------------------------------
+   A leading four-part dimension token (AxBxCxD) marks a mesh item. Everything
+   else — perforated sheet, PVC coated mesh, mosquito net, wire — is "other" and
+   passes its count straight through to the bill.
+
+   For mesh, the presence of an "Nmm" token after the dimensions is the ONLY
+   thing separating a sheet from a roll, because C means feet on a sheet and
+   gauge on a roll. Both readings are kept so the Type dropdown can switch
+   between them without re-parsing.                                          */
+function parsePlanSpec(rawName) {
+  const name = String(rawName || "").trim();
+  const s = name.toLowerCase();
+
+  const m = s.match(/^(\d+(?:\/\d+)?)\s*x\s*(\d+(?:\/\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)/);
+  if (!m) return { kind: "other", label: name };
+
+  const n3 = parseFloat(m[3]);
+  const n4 = parseFloat(m[4]);
+  const rest = s.slice(m[0].length).trim();
+
+  const mmTok = rest.match(/(\d+(?:\.\d+)?)\s*mm/);
+  const lite  = /\blite\b/.test(rest);
+  const heavy = /\bheavy\b/.test(rest);
+
+  return {
+    kind: mmTok ? "sheet" : "roll",
+    label: name,
+    ap: m[1] + "x" + m[2],
+    lite: lite,
+    heavy: heavy,
+    asSheet: { L: n3, H: n4,
+      thickCode: mmTok ? (mmTok[1] + "mm" + (lite ? " lite" : heavy ? " heavy" : "")) : null },
+    asRoll: { gauge: n3, widthFt: n4 }
+  };
+}
+
+// Which reading is in force for this plan row, honouring any manual override.
+function effKind(row) {
+  if (!row) return null;
+  if (row.spec.kind === "other") return "other";
+  return row.kindOverride || row.spec.kind;
+}
+
+/* ==========================================================================
+   4. DETERMINISTIC PDF PARSER — ZERO TOKENS
+   Calibrated to Jain Wire's Tally invoice template on A4 (595x842pt). Every
+   field is located by fixed column position or by its own label anchor. There
+   is no guessing: either the text is where the template puts it, or the parser
+   refuses the file and says so, rather than inventing a plausible number.
+
+   Column bands measured off six real CLT bills. Observed extents:
+     Sl No       26.6 – 37.5
+     Description 43.0 – 230
+     HSN         339.1 – 373.8
+     Quantity    390.2 – 432.5
+     Rate        446.2 – 476.5
+     per         486.7 – 504.0
+     Amount      528.7 – 569.8
+
+   Items are placed by their MIDPOINT, not their left edge. The numeric columns
+   are right-aligned, so an unusually wide figure — a five-digit rate, a
+   seven-digit amount — grows leftward and would fall out of its band if only the
+   left edge were tested. The midpoint stays put however wide the number gets.
+   ========================================================================== */
+
+const COLS = {
+  slno: [0, 40],
+  desc: [40, 330],
+  hsn:  [330, 382],
+  qty:  [382, 440],
+  rate: [440, 483],
+  per:  [483, 512],
+  amt:  [512, 99999]
+};
+function mid(it) { return it.x + (it.w || 0) / 2; }
+function colOf(it) {
+  const x = mid(it);
+  for (const k in COLS) if (x >= COLS[k][0] && x < COLS[k][1]) return k;
+  return null;
+}
+function lineText(l) { return l.items.map(i => i.text).join(" "); }
+function bucketOf(l) {
+  const b = { slno: [], desc: [], hsn: [], qty: [], rate: [], per: [], amt: [] };
+  l.items.forEach(it => { const c = colOf(it); if (c) b[c].push(it.text); });
+  return b;
+}
+
+// Group text items into visual lines, strictly per page. Pages are never merged:
+// each page's y restarts at its own top, so clustering across a page boundary
+// would silently interleave unrelated rows.
+//
+// Tolerance of 2.5pt is deliberate — Tally sometimes flushes one row in two text
+// runs 0.1pt apart (seen on Vattappara rows 6, 11 and 16). Exact-y grouping would
+// split those rows in half.
+async function readPdfLines(doc) {
+  const out = [];
+  for (let p = 1; p <= doc.numPages; p++) {
+    const page = await doc.getPage(p);
+    const content = await page.getTextContent();
+    const items = content.items
+      .filter(it => it.str && it.str.trim())
+      .map(it => ({ x: it.transform[4], y: it.transform[5], w: it.width || 0, text: it.str.trim() }));
+    items.sort((a, b) => b.y - a.y || a.x - b.x);   // pdf.js y grows upward
+    const lines = [];
+    items.forEach(it => {
+      let ln = lines.find(l => Math.abs(l.y - it.y) <= 2.5);
+      if (!ln) { ln = { y: it.y, page: p, items: [] }; lines.push(ln); }
+      ln.items.push(it);
+    });
+    lines.forEach(l => l.items.sort((a, b) => a.x - b.x));
+    lines.sort((a, b) => b.y - a.y);
+    out.push.apply(out, lines);
+  }
+  return out;
+}
+
+// Returns a parsed invoice, or throws with a plain-language reason. Never returns
+// a half-read invoice.
+function parseInvoice(lines) {
+  const texts = lines.map(lineText);
+
+  // Template guard. The item table must carry an HSN/SAC column at the expected
+  // position — that is what separates a CLT sales invoice from a receipt note or
+  // a supplier's own letterhead, both of which have a "Description of Goods"
+  // header but a completely different column layout.
+  const headerIdx = lines.findIndex(l => {
+    if (!/Description\s+of\s+Goods/i.test(lineText(l))) return false;
+    return l.items.some(it => /HSN/i.test(it.text) && mid(it) >= 320 && mid(it) <= 400);
+  });
+  if (headerIdx < 0) {
+    throw new Error("this doesn't look like a Jain Wire Tally sales invoice; no HSN/SAC column where the template puts it");
+  }
+
+  const findVal = re => {
+    for (const t of texts) { const m = t.match(re); if (m) return m[1].trim(); }
+    return null;
+  };
+  const invoiceNumber = findVal(/Invoice\s*No\.?\s*:?\s*(\S+)/i);
+  const invoiceDate   = findVal(/\bDated\s*:?\s*(\S+)/i);
+  const eWayBill      = findVal(/e-?\s*Way\s*Bill\s*No\.?\s*:?\s*(\d+)/i);
+  const sellerGstin   = findVal(/GSTIN\/UIN\s*:?\s*(\S+)/i);   // first on the page is the seller's
+
+  // Party sits in the right-hand block under the "Buyer" label. Anchor on the
+  // label's own x (about 301pt), not the row's leftmost item — that row is shared
+  // with "Dated:" on the left half of the page.
+  let partyName = null;
+  const buyerIdx = lines.findIndex(l => l.items.some(it => /^Buyer/i.test(it.text)));
+  if (buyerIdx >= 0) {
+    const anchor = lines[buyerIdx].items.find(it => /^Buyer/i.test(it.text));
+    for (let i = buyerIdx + 1; i < lines.length; i++) {
+      const inCol = lines[i].items.filter(it => it.x >= anchor.x - 12 && it.x < anchor.x + 280);
+      if (inCol.length) { partyName = inCol.map(it => it.text).join(" "); break; }
+    }
+  }
+
+  const rawItems = [];
+  let taxableTotal = null, grandTotal = null, totalQty = null, totalUnit = null;
+  let inTable = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    const t = lineText(l).trim();
+
+    if (i === headerIdx) { inTable = true; continue; }
+    if (!inTable) continue;
+
+    const b = bucketOf(l);
+
+    if (/^Total\b/i.test(t)) {
+      grandTotal = toNum(b.amt.join(" "));
+      totalQty   = toNum(b.qty.join(" "));
+      totalUnit  = b.qty.join(" ").replace(/[\d.,]/g, "").trim() || null;
+      break;                                       // everything past this is boilerplate
+    }
+    if (/^(CGST|SGST|IGST|Round\s*Off)\b/i.test(t)) continue;   // tax rows, read separately below
+
+    const slText = b.slno.join("");
+    if (/^\d+$/.test(slText)) {
+      rawItems.push({
+        sl: parseInt(slText, 10),
+        description: b.desc.join(" "),
+        qtyRaw: b.qty.join(" "), rateRaw: b.rate.join(" "),
+        perRaw: b.per.join(" "), amtRaw: b.amt.join(" ")
+      });
+    } else if (b.desc.length && !b.amt.length && !b.hsn.length && !b.qty.length && rawItems.length) {
+      // Wrapped description, e.g. the "3ft x 30 Mtr Black" line under Mosquito Net.
+      rawItems[rawItems.length - 1].description += " " + b.desc.join(" ");
+    } else if (b.amt.length && !b.desc.length && !b.slno.length && !b.hsn.length && !b.qty.length) {
+      // The unlabelled subtotal sitting directly above CGST.
+      taxableTotal = toNum(b.amt.join(" "));
+    }
+  }
+
+  if (!rawItems.length) throw new Error("the item table was found but no line items could be read from it");
+
+  let cgst = null, sgst = null, igst = null, roundOff = null;
+  lines.forEach(l => {
+    const t = lineText(l).trim();
+    const v = toNum(bucketOf(l).amt.join(" "));
+    if (v == null) return;
+    if (/^CGST/i.test(t) && cgst == null) cgst = v;
+    else if (/^SGST/i.test(t) && sgst == null) sgst = v;
+    else if (/^IGST/i.test(t) && igst == null) igst = v;
+    else if (/^Round\s*Off/i.test(t) && roundOff == null) roundOff = v;
+  });
+
+  const items = rawItems.map(it => {
+    const clean = it.qtyRaw.replace(/,/g, "");
+    const qm = clean.match(/-?\d+(\.\d+)?/);
+    const unit = clean.replace(/-?\d+(\.\d+)?/, "").trim();
+    return {
+      sl: it.sl,
+      description: it.description.replace(/\s+/g, " ").trim(),
+      qty: qm ? parseFloat(qm[0]) : null,
+      unit: unit || (it.perRaw || "").trim() || null,
+      rate: toNum(it.rateRaw),
+      amount: toNum(it.amtRaw)
+    };
+  });
+
+  return {
+    partyName, invoiceNumber, invoiceDate, eWayBill, sellerGstin,
+    taxableTotal, cgst, sgst, igst, roundOff, grandTotal, totalQty, totalUnit, items
+  };
+}
+
+/* --- bill description -> structured spec ---------------------------------- */
+function parseBillSpec(desc) {
+  const t = String(desc || "").replace(/\s+/g, " ").trim();
+  const m = t.match(/\b(sheet|roll)\s+mesh\s+(\d+(?:\.\d+)?)\s*mm\s*x\s*(\d+(?:\.\d+)?)\s*mm\s+(\d+(?:\.\d+)?)\s*mm\s+(\S+)/i);
+  if (!m) return { kind: "other", raw: t };
+  const kind = m[1].toLowerCase();
+  const ap = [parseFloat(m[2]), parseFloat(m[3])];
+  const thick = parseFloat(m[4]);
+  const tail = m[5];
+  if (kind === "sheet") {
+    const d = tail.match(/^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)$/i);
+    return { kind: "sheet", raw: t, ap, thick, L: d ? parseFloat(d[1]) : null, H: d ? parseFloat(d[2]) : null };
+  }
+  const w = tail.match(/^(\d+(?:\.\d+)?)\s*ft$/i);
+  return { kind: "roll", raw: t, ap, thick, widthFt: w ? parseFloat(w[1]) : null };
+}
+
+/* ==========================================================================
+   5. MATCHING
+   Party first, then lines within that party's block. Both are confidence-gated:
+   the tool assigns only when it is sure, and otherwise leaves you a dropdown.
+   ========================================================================== */
+
+const PARTY_STOPWORDS = new Set([
+  "traders","trader","trading","corporation","corp","co","company","steels","steel",
+  "building","materials","material","enterprises","enterprise","and","the","hardware",
+  "pkd","mlpm","ekm","clt","knr","tvm","ph","road","private","limited","ltd"
+]);
+
+function partyTokens(s) {
+  return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").split(/\s+/)
+    .filter(w => w.length > 1 && !PARTY_STOPWORDS.has(w) && !/^\d+$/.test(w));
+}
+// Two views, best wins. Token containment handles a bill name padded out with a
+// full postal address; whole-string dice handles a name broken up by full stops
+// such as "K.V.R.Traders".
+function partyScore(planName, billName) {
+  const pt = partyTokens(planName), bt = partyTokens(billName);
+  let tokenScore = 0;
+  if (pt.length && bt.length) {
+    let sum = 0;
+    pt.forEach(p => { let best = 0; bt.forEach(b => { const d = dice(p, b); if (d > best) best = d; }); sum += best; });
+    tokenScore = sum / pt.length;
+  }
+  return Math.max(tokenScore, dice(alnum(planName), alnum(billName)));
+}
+
+function autoMatchParty(bill) {
+  if (!state.plan) { bill.blockIdx = null; bill.partyAuto = false; bill.partyCandidates = []; return; }
+  const scored = state.plan.blocks
+    .map((b, i) => ({ i, s: partyScore(b.party, bill.parsed.partyName) }))
+    .sort((a, b) => b.s - a.s);
+  bill.partyCandidates = scored;
+  const best = scored[0], runner = scored[1];
+  if (best && best.s >= 0.55 && (!runner || best.s - runner.s >= 0.12)) {
+    bill.blockIdx = best.i; bill.partyAuto = true;
+  } else {
+    bill.blockIdx = null; bill.partyAuto = false;
+  }
+}
+
+function knownThickness(row, ek) {
+  if (ek === "sheet") {
+    const code = row.spec.asSheet.thickCode;
+    return (code && state.thickness.sheet[code] != null) ? state.thickness.sheet[code] : null;
+  }
+  const key = row.spec.ap + "|" + row.spec.asRoll.gauge + "|" + (row.spec.lite ? "lite" : "");
+  return state.thickness.roll[key] != null ? state.thickness.roll[key] : null;
+}
+
+// Score one plan row against one bill line, 0–100. Structural facts carry the
+// match; quantity and rate only nudge the non-mesh items, where the text is the
+// unreliable part. Mesh items are never matched on their numbers, so a wrong rate
+// cannot disguise itself as a different product.
+function scorePair(row, line) {
+  const ek = effKind(row);
+  const bs = line.spec;
+
+  if (ek === "other" || bs.kind === "other") {
+    if (ek !== "other" || bs.kind !== "other") return 0;
+    let s = dice(alnum(row.spec.label), alnum(bs.raw)) * 100;
+    if (line.qty != null && Math.abs(line.qty - row.nos) < 0.005) s += 12;
+    if (line.rate != null && Math.abs(line.rate - row.rate / state.rules.taxDivisor) <= 0.05) s += 8;
+    return Math.min(100, s);
+  }
+
+  if (ek !== bs.kind) return 0;
+  let s = 40;
+
+  const alts = (state.aperture[ek] || {})[row.spec.ap];
+  if (alts && alts.length) {
+    if (alts.some(a => a[0] === bs.ap[0] && a[1] === bs.ap[1])) s += 25;
+    else return 0;                                  // a confident rejection, not a guess
+  } else {
+    s += 10;                                        // unknown code: neither vouch nor block
+  }
+
+  if (ek === "sheet") {
+    const L = row.spec.asSheet.L, H = row.spec.asSheet.H;
+    if ((L === bs.L && H === bs.H) || (L === bs.H && H === bs.L)) s += 25; else return 0;
+  } else {
+    if (row.spec.asRoll.widthFt === bs.widthFt) s += 25; else return 0;
+  }
+
+  const known = knownThickness(row, ek);
+  if (known != null && bs.thick != null) {
+    if (Math.abs(known - bs.thick) <= 0.06) s += 10; else s -= 12;
+  }
+  return Math.max(0, Math.min(100, s));
+}
+
+function autoMatchLines(bill) {
+  bill.lines.forEach(l => { if (!l.manual) { l.rowIdx = null; l.score = 0; l.review = false; } });
+  const block = (state.plan && bill.blockIdx != null) ? state.plan.blocks[bill.blockIdx] : null;
+  if (!block) { bill.lines.forEach(l => { l.rowIdx = null; l.manual = false; }); return; }
+
+  const takenRows = new Set(), takenLines = new Set();
+  bill.lines.forEach((l, li) => {
+    if (l.manual && l.rowIdx != null && l.rowIdx < block.rows.length) {
+      takenRows.add(l.rowIdx); takenLines.add(li);
+    } else if (l.manual && l.rowIdx != null) {
+      l.rowIdx = null; l.manual = false;            // stale index after a plan reload
+    }
+  });
+
+  const pairs = [];
+  block.rows.forEach((r, ri) => {
+    if (takenRows.has(ri)) return;
+    bill.lines.forEach((l, li) => {
+      if (takenLines.has(li)) return;
+      const s = scorePair(r, l);
+      if (s > 0) pairs.push({ ri, li, s });
+    });
+  });
+  pairs.sort((a, b) => b.s - a.s);
+
+  const byLine = {};
+  pairs.forEach(p => { (byLine[p.li] = byLine[p.li] || []).push(p); });
+
+  // Pass 1 — confident, unambiguous assignments.
+  pairs.forEach(p => {
+    if (takenRows.has(p.ri) || takenLines.has(p.li)) return;
+    const arr = byLine[p.li] || [];
+    const runner = arr.find(q => q !== p && !takenRows.has(q.ri));
+    const margin = runner ? p.s - runner.s : 99;
+    const bar = block.rows[p.ri].spec.kind !== "other" ? 85 : 45;
+    if (p.s >= bar && margin >= 8) {
+      takenRows.add(p.ri); takenLines.add(p.li);
+      bill.lines[p.li].rowIdx = p.ri;
+      bill.lines[p.li].score = p.s;
+      bill.lines[p.li].review = false;
+    }
+  });
+
+  // Pass 2 — a line left with exactly one surviving candidate. Assigned, but
+  // marked for review so it is visible rather than silent.
+  bill.lines.forEach((l, li) => {
+    if (takenLines.has(li)) return;
+    const arr = (byLine[li] || []).filter(q => !takenRows.has(q.ri));
+    if (arr.length === 1) {
+      takenRows.add(arr[0].ri); takenLines.add(li);
+      l.rowIdx = arr[0].ri; l.score = arr[0].s; l.review = true;
+    }
+  });
+}
+
+/* ==========================================================================
+   6. THE AUDIT ITSELF
+   ========================================================================== */
+
+function unitClass(unit) {
+  const u = String(unit || "").toLowerCase();
+  if (u.indexOf("sq") >= 0) return "sqft";
+  if (u.indexOf("kg") >= 0) return "kg";
+  return "nos";
+}
+function rateTol(u) {
+  return u === "sqft" ? state.rules.tolRateSqft : u === "kg" ? state.rules.tolRateKg : state.rules.tolRateNos;
+}
+function qtyTol(u) {
+  return u === "sqft" ? state.rules.tolQtySqft : u === "kg" ? state.rules.tolQtyKg : state.rules.tolQtyNos;
+}
+function rollLenOf(row) {
+  return (row && row.rollLenFt != null) ? row.rollLenFt : state.rules.rollLengthFt;
+}
+
+// The CLT-specific conversion: a plan count of pieces becomes billed square feet.
+function expectedQtyOf(row, billUnit) {
+  const ek = effKind(row);
+  if (ek === "sheet") {
+    return { qty: row.nos * row.spec.asSheet.L * row.spec.asSheet.H, unit: "sq.ft",
+      calc: qtyFmt(row.nos) + " nos × " + row.spec.asSheet.L + " × " + row.spec.asSheet.H + " ft" };
+  }
+  if (ek === "roll") {
+    const len = rollLenOf(row);
+    return { qty: row.nos * len * row.spec.asRoll.widthFt, unit: "sq.ft",
+      calc: qtyFmt(row.nos) + " nos × " + len + " × " + row.spec.asRoll.widthFt + " ft" };
+  }
+  return { qty: row.nos, unit: billUnit || "NOS", calc: null };
+}
+
+// Everything the audit says about one bill line. Expected amount is computed from
+// the UNROUNDED expected rate, which is how Tally computes it too — using the
+// printed two-decimal rate would show a false ₹1–3 gap on every large line.
+function auditLine(bill, line) {
+  const out = { line, row: null, ek: null, expQty: null, expUnit: null, expCalc: null,
+    expRate: null, expAmt: null, qtyState: "na", rateState: "na", amtState: "na",
+    notes: [], flags: 0 };
+
+  const block = (state.plan && bill.blockIdx != null) ? state.plan.blocks[bill.blockIdx] : null;
+  const row = (block && line.rowIdx != null) ? block.rows[line.rowIdx] : null;
+  out.row = row;
+
+  // Structural notes that stand on their own, matched or not.
+  if (line.spec.kind === "sheet" && line.spec.ap && line.spec.ap[0] === 60 && line.spec.ap[1] === 60) {
+    out.notes.push({ t: "60×60 aperture", k: "info" });
+  }
+
+  if (!row) {
+    out.qtyState = out.rateState = out.amtState = "unmatched";
+    out.notes.push({ t: block ? "not on the plan" : "party not set", k: block ? "bad" : "warn" });
+    if (block) out.flags++;
+    return out;
+  }
+
+  const ek = effKind(row);
+  out.ek = ek;
+  const e = expectedQtyOf(row, line.unit);
+  out.expQty = e.qty; out.expUnit = e.unit; out.expCalc = e.calc;
+  out.expRate = row.rate / state.rules.taxDivisor;
+  out.expAmt  = out.expQty * out.expRate;
+
+  const uc = unitClass(line.unit || out.expUnit);
+
+  if (line.qty == null) out.qtyState = "na";
+  else if (Math.abs(line.qty - out.expQty) <= qtyTol(uc)) out.qtyState = "ok";
+  else { out.qtyState = line.qty > out.expQty ? "over" : "short"; out.flags++; }
+
+  if (line.rate == null) out.rateState = "na";
+  else if (Math.abs(line.rate - out.expRate) <= rateTol(uc)) out.rateState = "ok";
+  else { out.rateState = line.rate > out.expRate ? "over" : "under"; out.flags++; }
+
+  // Tally prices a line off the unrounded rate, so a correct line lands within a
+  // paisa. The allowance widens by half a paisa per unit purely to absorb rate
+  // display rounding on very large quantities — half a paisa per sq.ft is far
+  // below any real pricing error, so nothing meaningful hides inside it.
+  const amtTol = Math.max(state.rules.tolAmount, (out.expQty || 0) * 0.005);
+  if (line.amount == null) out.amtState = "na";
+  else if (Math.abs(line.amount - out.expAmt) <= amtTol) out.amtState = "ok";
+  else { out.amtState = line.amount > out.expAmt ? "over" : "under"; out.flags++; }
+
+  // Cross-checks that inform rather than accuse.
+  if (ek !== "other" && line.spec.kind === ek) {
+    const known = knownThickness(row, ek);
+    if (known != null && line.spec.thick != null && Math.abs(known - line.spec.thick) > 0.06) {
+      out.notes.push({ t: "billed " + line.spec.thick + "mm, table says " + known + "mm", k: "warn" });
+    }
+  }
+  if (line.unit && out.expUnit && unitClass(line.unit) !== unitClass(out.expUnit)) {
+    out.notes.push({ t: "unit is " + line.unit + ", expected " + out.expUnit, k: "warn" });
+  }
+  if (row.kindOverride) out.notes.push({ t: "forced to " + row.kindOverride, k: "info" });
+  if (line.review) out.notes.push({ t: "check this match", k: "warn" });
+  if (line.manual) out.notes.push({ t: "matched by hand", k: "info" });
+
+  return out;
+}
+
+function auditBill(bill) {
+  bill.audit = bill.lines.map(l => auditLine(bill, l));
+
+  const block = (state.plan && bill.blockIdx != null) ? state.plan.blocks[bill.blockIdx] : null;
+  const used = new Set(bill.lines.map(l => l.rowIdx).filter(v => v != null));
+  bill.notDispatched = block ? block.rows.map((r, i) => ({ r, i })).filter(o => !used.has(o.i)) : [];
+
+  const lineSum = bill.lines.reduce((a, l) => a + (l.amount || 0), 0);
+  const p = bill.parsed;
+  const taxSum = (p.cgst || 0) + (p.sgst || 0) + (p.igst || 0);
+  bill.totals = {
+    lineSum, taxSum,
+    taxable: p.taxableTotal,
+    taxableGap: p.taxableTotal != null ? lineSum - p.taxableTotal : null,
+    grand: p.grandTotal,
+    grandCalc: p.taxableTotal != null ? p.taxableTotal + taxSum + (p.roundOff || 0) : null
+  };
+  bill.totals.grandGap = (bill.totals.grand != null && bill.totals.grandCalc != null)
+    ? bill.totals.grand - bill.totals.grandCalc : null;
+
+  // Bill-level warnings, kept separate from line flags.
+  bill.warnings = [];
+  if (p.sellerGstin && p.sellerGstin.replace(/[^A-Za-z0-9]/g, "").toUpperCase() !== CLT_GSTIN) {
+    bill.warnings.push("Seller GSTIN is " + p.sellerGstin + ", not the Calicut entity");
+  }
+  if (state.bills.some(b => b !== bill && b.parsed.invoiceNumber && b.parsed.invoiceNumber === p.invoiceNumber))
+    bill.warnings.push("Invoice " + p.invoiceNumber + " is loaded more than once");
+  if (state.bills.some(b => b !== bill && b.blockIdx != null && b.blockIdx === bill.blockIdx))
+    bill.warnings.push("Another bill is matched to this same plan block");
+  if (bill.totals.taxableGap != null && Math.abs(bill.totals.taxableGap) > 1)
+    bill.warnings.push("Line amounts don't add up to the bill's own taxable total");
+  if (bill.totals.grandGap != null && Math.abs(bill.totals.grandGap) > 1)
+    bill.warnings.push("Taxable plus tax plus round-off doesn't reach the printed grand total");
+
+  bill.flagCount = bill.audit.reduce((a, r) => a + r.flags, 0) + bill.notDispatched.length;
+  bill.rupeeGap = bill.audit.reduce((a, r) =>
+    (r.amtState === "over" || r.amtState === "under") ? a + (r.line.amount - r.expAmt) : a, 0);
+  return bill;
+}
+
+/* ==========================================================================
+   7. RENDERING
+   Rebuilt whole on every change and driven by event delegation, so no handler is
+   ever attached to a node a later redraw throws away.
+   ========================================================================== */
+
+function makeBill(fileName, parsed) {
+  return {
+    id: "b" + Math.random().toString(36).slice(2, 9),
+    fileName, parsed,
+    blockIdx: null, partyAuto: false, partyCandidates: [],
+    lines: parsed.items.map(it => ({
+      sl: it.sl, description: it.description, qty: it.qty, unit: it.unit,
+      rate: it.rate, amount: it.amount, spec: parseBillSpec(it.description),
+      rowIdx: null, score: 0, manual: false, review: false
+    })),
+    audit: [], notDispatched: [], warnings: [], totals: {}, flagCount: 0, rupeeGap: 0
+  };
+}
+function pill(t, k) { return '<span class="pill ' + k + '">' + esc(t) + "</span>"; }
+
+function renderSummary() {
+  const el = document.getElementById("summary");
+  if (!state.bills.length) { el.innerHTML = ""; return; }
+  const bills = state.bills.length;
+  const lines = state.bills.reduce((a, b) => a + b.lines.length, 0);
+  const flags = state.bills.reduce((a, b) => a + b.flagCount, 0);
+  const gap   = state.bills.reduce((a, b) => a + b.rupeeGap, 0);
+  const noParty = state.bills.filter(b => b.blockIdx == null).length;
+
+  const bullets = [];
+  state.bills.forEach(b => {
+    const who = esc(b.parsed.invoiceNumber || b.fileName);
+    b.warnings.forEach(w => bullets.push("<b>" + who + "</b> — " + esc(w)));
+    if (b.blockIdx == null) {
+      bullets.push("<b>" + esc(b.fileName) + "</b> — pick the party before it can be checked");
+      return;
+    }
+    const bits = [];
+    b.audit.forEach(r => {
+      if (r.qtyState === "over" || r.qtyState === "short")
+        bits.push("line " + r.line.sl + " qty " + qtyFmt(r.line.qty) + " vs " + qtyFmt(r.expQty));
+      if (r.rateState === "over" || r.rateState === "under")
+        bits.push("line " + r.line.sl + " rate " + rate2(r.line.rate) + " vs " + rate2(r.expRate));
+      if (r.qtyState === "unmatched") bits.push("line " + r.line.sl + " not on the plan");
+    });
+    b.notDispatched.forEach(o => bits.push("not dispatched: " + o.r.name.trim()));
+    if (bits.length) bullets.push("<b>" + who + "</b> — " + esc(bits.join("; ")));
+  });
+
+  el.innerHTML =
+    '<div class="summary ' + (flags || noParty ? "dirty" : "clean") + '">' +
+      "<h2>" + (flags ? (flags + " thing" + (flags === 1 ? "" : "s") + " to look at")
+                      : "Every line matches the plan") + "</h2>" +
+      '<div class="figs">' +
+        '<div class="fig"><b>' + bills + "</b><span>bills</span></div>" +
+        '<div class="fig"><b>' + lines + "</b><span>lines</span></div>" +
+        '<div class="fig ' + (flags ? "bad" : "ok") + '"><b>' + flags + "</b><span>flags</span></div>" +
+        '<div class="fig ' + (Math.abs(gap) >= 1 ? "bad" : "ok") + '"><b>' +
+          (gap >= 0 ? "+" : "−") + money(Math.abs(gap)) + "</b><span>net rupee gap</span></div>" +
+        (noParty ? '<div class="fig bad"><b>' + noParty + "</b><span>party not set</span></div>" : "") +
+      "</div>" +
+      (bullets.length ? "<ul><li>" + bullets.join("</li><li>") + "</li></ul>" : "") +
+    "</div>";
+}
+
+function partySelect(bill) {
+  let h = '<select data-act="party" data-bill="' + bill.id + '"><option value="">— choose the party —</option>';
+  (state.plan ? state.plan.blocks : []).forEach((b, i) => {
+    const c = (bill.partyCandidates || []).find(x => x.i === i);
+    h += '<option value="' + i + '"' + (bill.blockIdx === i ? " selected" : "") + ">" +
+      esc(b.party) + (c ? " (" + Math.round(c.s * 100) + "%)" : "") + "</option>";
+  });
+  return h + "</select>";
+}
+function rowSelect(bill, li, line) {
+  const block = (state.plan && bill.blockIdx != null) ? state.plan.blocks[bill.blockIdx] : null;
+  let h = '<select data-act="row" data-bill="' + bill.id + '" data-line="' + li + '"><option value="">— not on plan —</option>';
+  if (block) block.rows.forEach((r, ri) => {
+    h += '<option value="' + ri + '"' + (line.rowIdx === ri ? " selected" : "") + ">" +
+      esc(r.name.trim()) + " · " + qtyFmt(r.nos) + " @ " + rate2(r.rate) + "</option>";
+  });
+  return h + "</select>";
+}
+function typeSelect(bill, li, row) {
+  if (!row || row.spec.kind === "other") return '<span class="dim">—</span>';
+  const cur = row.kindOverride || "";
+  return '<select data-act="kind" data-bill="' + bill.id + '" data-line="' + li + '">' +
+    '<option value=""' + (cur === "" ? " selected" : "") + ">Auto · " + row.spec.kind + "</option>" +
+    '<option value="sheet"' + (cur === "sheet" ? " selected" : "") + ">Sheet</option>" +
+    '<option value="roll"' + (cur === "roll" ? " selected" : "") + ">Roll</option></select>";
+}
+function cellNum(v, st, fmt) {
+  const bad = st === "over" || st === "under" || st === "short";
+  return '<span class="num' + (bad ? " cellbad" : "") + '">' + fmt(v) + "</span>";
+}
+
+function renderCard(bill) {
+  const p = bill.parsed;
+  const cls = bill.blockIdx == null ? "blocked" : (bill.flagCount ? "flagged" : "clean");
+
+  let h = '<div class="card ' + cls + '"><header><div>' +
+    "<h3>" + esc(p.partyName || "(party not read)") + "</h3>" +
+    '<div class="meta">Invoice <b>' + esc(p.invoiceNumber || "—") + "</b> · " + esc(p.invoiceDate || "—") +
+    " · e-Way <b>" + esc(p.eWayBill || "—") + "</b> · " + esc(bill.fileName) + "</div>" +
+    (bill.warnings.length ? '<div class="meta">' + bill.warnings.map(w => pill(w, "warn")).join(" ") + "</div>" : "") +
+    '</div><div class="partysel"><span>Plan block' + (bill.partyAuto ? " · matched" : " · pick one") + "</span>" +
+    partySelect(bill) + "</div></header>";
+
+  h += '<div class="tablescroll"><table class="lines"><thead><tr>' +
+    "<th>#</th><th>Bill line</th><th class='no-shot'>Plan item</th><th>Type</th><th class='r'>Roll ft</th>" +
+    "<th class='r'>Qty billed</th><th class='r'>Qty expected</th>" +
+    "<th class='r'>Rate billed</th><th class='r'>Rate expected</th>" +
+    "<th class='r'>Amount billed</th><th class='r'>Amount expected</th><th>Status</th>" +
+    "</tr></thead><tbody>";
+
+  bill.audit.forEach((r, li) => {
+    const l = r.line, row = r.row;
+    const st = [];
+    if (r.qtyState === "over")   st.push(pill("over-billed qty", "bad"));
+    if (r.qtyState === "short")  st.push(pill("short qty", "bad"));
+    if (r.rateState === "over")  st.push(pill("rate high", "bad"));
+    if (r.rateState === "under") st.push(pill("rate low", "bad"));
+    if (r.amtState === "over" || r.amtState === "under") st.push(pill("amount off", "bad"));
+    const allOk = !!row && r.qtyState === "ok" && r.rateState === "ok" && r.amtState === "ok";
+    if (allOk) st.push(pill("ok", "ok"));
+
+    const rollCell = (row && effKind(row) === "roll")
+      ? '<input type="number" step="1" min="1" style="width:58px" data-act="rolllen" data-bill="' +
+        bill.id + '" data-line="' + li + '" value="' + rollLenOf(row) + '">'
+      : '<span class="dim">—</span>';
+
+    const rowCls = [];
+    if (!row) rowCls.push("extra");
+    if (allOk && !r.notes.length) rowCls.push("line-ok");
+
+    h += "<tr" + (rowCls.length ? ' class="' + rowCls.join(" ") + '"' : "") + ">" +
+      '<td class="num">' + (l.sl != null ? l.sl : "") + "</td>" +
+      '<td class="desc">' + esc(l.description) + (row ? "<small>" + esc(row.name.trim()) + "</small>" : "") + "</td>" +
+      "<td class='no-shot'>" + rowSelect(bill, li, l) + "</td>" +
+      "<td>" + typeSelect(bill, li, row) + "</td>" +
+      '<td class="r">' + rollCell + "</td>" +
+      '<td class="r">' + cellNum(l.qty, r.qtyState, qtyFmt) + ' <span class="dim">' + esc(l.unit || "") + "</span></td>" +
+      '<td class="r">' + (r.expQty != null
+        ? '<span class="num">' + qtyFmt(r.expQty) + "</span>" + (r.expCalc ? '<span class="calc">' + esc(r.expCalc) + "</span>" : "")
+        : '<span class="dim">—</span>') + "</td>" +
+      '<td class="r">' + cellNum(l.rate, r.rateState, rate2) + "</td>" +
+      '<td class="r">' + (r.expRate != null ? '<span class="num">' + rate2(r.expRate) + "</span>" : '<span class="dim">—</span>') + "</td>" +
+      '<td class="r">' + cellNum(l.amount, r.amtState, money) + "</td>" +
+      '<td class="r">' + (r.expAmt != null ? '<span class="num">' + money(r.expAmt) + "</span>" : '<span class="dim">—</span>') + "</td>" +
+      '<td><div class="pills">' + st.join("") + r.notes.map(n => pill(n.t, n.k)).join("") + "</div></td></tr>";
+  });
+
+  bill.notDispatched.forEach(o => {
+    const e = expectedQtyOf(o.r, null);
+    const rate = o.r.rate / state.rules.taxDivisor;
+    h += '<tr class="missing"><td class="dim">—</td>' +
+      '<td class="desc"><span class="dim">on the plan, not on this bill</span><small>' + esc(o.r.name.trim()) + "</small></td>" +
+      "<td class='no-shot'></td><td></td><td></td>" +
+      '<td class="r dim">—</td><td class="r"><span class="num">' + qtyFmt(e.qty) + "</span>" +
+        (e.calc ? '<span class="calc">' + esc(e.calc) + "</span>" : "") + "</td>" +
+      '<td class="r dim">—</td><td class="r num">' + rate2(rate) + "</td>" +
+      '<td class="r dim">—</td><td class="r num">' + money(e.qty * rate) + "</td>" +
+      "<td>" + pill("not dispatched", "warn") + "</td></tr>";
+  });
+
+  h += "</tbody></table></div>";
+
+  const t = bill.totals;
+  const gapSpan = (v, tol) => v == null ? "" :
+    ' <span class="' + (Math.abs(v) > tol ? "cellbad" : "dim") + '">(' +
+    (v >= 0 ? "+" : "−") + money(Math.abs(v)) + ")</span>";
+  h += '<div class="totals">' +
+    "<div>Lines add to <b>" + money(t.lineSum) + "</b></div>" +
+    "<div>Bill taxable <b>" + money(t.taxable) + "</b>" + gapSpan(t.taxableGap, 1) + "</div>" +
+    "<div>Tax <b>" + money(t.taxSum) + "</b></div>" +
+    "<div>Grand total <b>" + money(t.grand) + "</b>" + gapSpan(t.grandGap, 1) + "</div>" +
+    "</div>";
+
+  h += '<div class="cardfoot no-shot">' +
+    '<button class="act" data-act="log" data-bill="' + bill.id + '">Add flags to log</button>' +
+    '<button class="act" data-act="rematch" data-bill="' + bill.id + '">Re-run matching</button>' +
+    '<button class="act" data-act="drop" data-bill="' + bill.id + '">Remove bill</button>' +
+    "</div></div>";
+  return h;
+}
+
+function renderAll() {
+  state.bills.forEach(auditBill);
+  const el = document.getElementById("cards");
+  if (!state.bills.length) {
+    el.innerHTML = '<div class="empty"><b>' +
+      (state.plan ? "Plan loaded — add the bills" : "Nothing loaded yet") + "</b>" +
+      (state.plan ? "Drop today's invoice PDFs above to check them."
+                  : "Start with the loading plan, then drop in the day's bills.") + "</div>";
+  } else {
+    el.innerHTML = state.bills.map(renderCard).join("");
+  }
+  renderSummary();
+}
+
+/* ==========================================================================
+   8. RULES, CODE TABLES, LOG
+   ========================================================================== */
+
+function renderRules() {
+  document.getElementById("ruleGrid").innerHTML = Object.keys(DEFAULT_RULES).map(k =>
+    "<label>" + esc(RULE_LABELS[k]) +
+    '<input type="number" step="0.01" data-act="rule" data-key="' + k + '" value="' + state.rules[k] + '"></label>'
+  ).join("");
+}
+
+function renderCodes() {
+  let a = "<tr><th>Kind</th><th>Code</th><th>Millimetres — comma-separated pairs</th></tr>";
+  ["sheet", "roll"].forEach(kind => {
+    Object.keys(state.aperture[kind] || {}).forEach(code => {
+      const v = state.aperture[kind][code].map(p => p[0] + "x" + p[1]).join(", ");
+      a += "<tr><td>" + kind + "</td><td>" + esc(code) + "</td>" +
+        '<td><input data-act="ap" data-kind="' + kind + '" data-code="' + esc(code) + '" value="' + esc(v) + '"></td></tr>';
+    });
+  });
+  document.getElementById("tblAperture").innerHTML = a;
+
+  let s = "<tr><th>Code</th><th>Wire (mm)</th></tr>";
+  Object.keys(state.thickness.sheet).forEach(code => {
+    s += "<tr><td>" + esc(code) + '</td><td><input type="number" step="0.1" data-act="thsheet" data-code="' +
+      esc(code) + '" value="' + state.thickness.sheet[code] + '"></td></tr>';
+  });
+  document.getElementById("tblSheetTh").innerHTML = s;
+
+  let r = "<tr><th>Aperture · gauge · lite</th><th>Wire (mm)</th></tr>";
+  Object.keys(state.thickness.roll).forEach(code => {
+    r += "<tr><td>" + esc(code.replace(/\|/g, " · ")) + '</td><td><input type="number" step="0.1" data-act="throll" data-code="' +
+      esc(code) + '" value="' + state.thickness.roll[code] + '"></td></tr>';
+  });
+  document.getElementById("tblRollTh").innerHTML = r;
+}
+
+function renderLog() {
+  const el = document.getElementById("logBody");
+  if (!state.log.length) { el.innerHTML = '<p class="desc" style="margin:0">Nothing logged yet.</p>'; return; }
+  let h = "<table class='log'><thead><tr><th>Logged</th><th>Invoice</th><th>Party</th><th>Line</th><th>Issue</th></tr></thead><tbody>";
+  state.log.slice().reverse().forEach(e => {
+    h += "<tr><td class='dim'>" + esc(e.at) + "</td><td class='mono'>" + esc(e.invoice) +
+      "</td><td>" + esc(e.party) + "</td><td>" + esc(e.line) + "</td><td>" + esc(e.issue) + "</td></tr>";
+  });
+  el.innerHTML = h + "</tbody></table>";
+}
+
+// Logging the same bill twice must not double the entries, so each row carries a
+// stable key of invoice + line + issue and an existing key is skipped.
+function logBill(bill) {
+  const at = new Date().toLocaleString("en-IN");
+  const inv = bill.parsed.invoiceNumber || bill.fileName;
+  const party = bill.parsed.partyName || "";
+  const have = new Set(state.log.map(e => e.key));
+  let added = 0;
+  const push = (line, issue) => {
+    const key = inv + "||" + line + "||" + issue;
+    if (have.has(key)) return;
+    have.add(key);
+    state.log.push({ key, at, invoice: inv, party, line, issue });
+    added++;
+  };
+  bill.audit.forEach(r => {
+    const bits = [];
+    if (r.qtyState === "over")   bits.push("billed " + qtyFmt(r.line.qty) + " against " + qtyFmt(r.expQty) + " on the plan");
+    if (r.qtyState === "short")  bits.push("billed " + qtyFmt(r.line.qty) + ", plan says " + qtyFmt(r.expQty));
+    if (r.rateState === "over")  bits.push("rate " + rate2(r.line.rate) + " above the expected " + rate2(r.expRate));
+    if (r.rateState === "under") bits.push("rate " + rate2(r.line.rate) + " below the expected " + rate2(r.expRate));
+    if (r.amtState === "over" || r.amtState === "under")
+      bits.push("amount " + money(r.line.amount) + " against " + money(r.expAmt));
+    if (r.qtyState === "unmatched" && !r.row && bill.blockIdx != null) bits.push("billed but not on the plan");
+    if (bits.length) push(r.line.description, bits.join("; "));
+  });
+  bill.notDispatched.forEach(o => push(o.r.name.trim(), "on the plan, not dispatched on this bill"));
+  bill.warnings.forEach(w => push("(whole bill)", w));
+  savePersisted();
+  renderLog();
+  document.getElementById("panelLog").classList.add("open");
+  syncToggleStates();
+  return added;
+}
+
+/* ==========================================================================
+   9. CSV
+   ========================================================================== */
+
+function csvCell(v) {
+  const s = v == null ? "" : String(v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+function download(name, text) {
+  // The BOM keeps Excel from mangling the rupee sign and the multiplication sign.
+  const blob = new Blob(["\ufeff" + text], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+function exportCsv() {
+  if (!state.bills.length) return;
+  const rows = [["File","Invoice","Date","Party on bill","Plan block","Sl","Bill line","Plan item","Type",
+    "Qty billed","Unit","Qty expected","Qty working","Rate billed","Rate expected","Rate gap",
+    "Amount billed","Amount expected","Amount gap","Status","Notes"]];
+  state.bills.forEach(b => {
+    const blk = (state.plan && b.blockIdx != null) ? state.plan.blocks[b.blockIdx].party : "";
+    b.audit.forEach(r => {
+      const st = [];
+      if (r.qtyState === "over") st.push("qty over");
+      if (r.qtyState === "short") st.push("qty short");
+      if (r.qtyState === "unmatched") st.push(b.blockIdx == null ? "party not set" : "not on plan");
+      if (r.rateState === "over") st.push("rate high");
+      if (r.rateState === "under") st.push("rate low");
+      if (r.amtState === "over" || r.amtState === "under") st.push("amount off");
+      rows.push([b.fileName, b.parsed.invoiceNumber, b.parsed.invoiceDate, b.parsed.partyName, blk,
+        r.line.sl, r.line.description, r.row ? r.row.name.trim() : "", r.ek || "",
+        r.line.qty, r.line.unit, r.expQty, r.expCalc || "", r.line.rate,
+        r.expRate != null ? r.expRate.toFixed(4) : "",
+        (r.line.rate != null && r.expRate != null) ? (r.line.rate - r.expRate).toFixed(4) : "",
+        r.line.amount, r.expAmt != null ? r.expAmt.toFixed(2) : "",
+        (r.line.amount != null && r.expAmt != null) ? (r.line.amount - r.expAmt).toFixed(2) : "",
+        st.length ? st.join(" / ") : "ok", r.notes.map(n => n.t).join(" / ")]);
+    });
+    b.notDispatched.forEach(o => {
+      const e = expectedQtyOf(o.r, null);
+      rows.push([b.fileName, b.parsed.invoiceNumber, b.parsed.invoiceDate, b.parsed.partyName, blk,
+        "", "", o.r.name.trim(), effKind(o.r), "", "", e.qty, e.calc || "", "",
+        (o.r.rate / state.rules.taxDivisor).toFixed(4), "", "", "", "", "not dispatched", ""]);
+    });
+  });
+  download("clt-audit-" + new Date().toISOString().slice(0, 10) + ".csv",
+    rows.map(r => r.map(csvCell).join(",")).join("\n"));
+}
+function exportLogCsv() {
+  if (!state.log.length) return;
+  const rows = [["Logged","Invoice","Party","Line","Issue"]].concat(
+    state.log.map(e => [e.at, e.invoice, e.party, e.line, e.issue]));
+  download("clt-discrepancy-log.csv", rows.map(r => r.map(csvCell).join(",")).join("\n"));
+}
+
+/* ==========================================================================
+   10. FILE HANDLING — click, drag and drop
+   ========================================================================== */
+
+function readAsArrayBuffer(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = () => rej(new Error("could not read " + file.name));
+    r.readAsArrayBuffer(file);
+  });
+}
+
+async function loadPlanFile(file) {
+  clearErrors();
+  const zone = document.getElementById("zoneExcel");
+  try {
+    const blocks = parsePlanWorkbook(await readAsArrayBuffer(file));
+    if (!blocks.length) throw new Error("no party blocks with items were found; each party needs a name row of its own, then rows of item, nos and rate");
+    state.plan = { fileName: file.name, blocks };
+    zone.classList.add("filled");
+    const items = blocks.reduce((a, b) => a + b.rows.length, 0);
+    const strip = document.getElementById("stripExcel");
+    strip.className = "strip good show";
+    strip.innerHTML = esc(file.name) + " — " + blocks.length + " parties, " + items + " items" +
+      '<span class="clear-link" data-act="clearplan">clear</span>';
+    // A new plan invalidates every existing match.
+    state.bills.forEach(b => {
+      b.lines.forEach(l => { l.manual = false; l.rowIdx = null; });
+      autoMatchParty(b); autoMatchLines(b);
+    });
+    renderAll();
+  } catch (e) {
+    zone.classList.remove("filled");
+    showError("Couldn't read the loading plan", e.message);
+  }
+}
+
+async function loadBillFiles(files) {
+  const pdfs = files.filter(f => /\.pdf$/i.test(f.name) || f.type === "application/pdf");
+  if (!pdfs.length) { showError("Those aren't PDFs", "the bill zone takes .pdf invoices"); return; }
+  const zone = document.getElementById("zonePdf");
+  const sub = zone.querySelector(".sub");
+  const subText = sub.textContent;
+  zone.classList.add("busy");
+  let done = 0;
+  for (const f of pdfs) {
+    sub.textContent = "Reading " + f.name + " …";
+    try {
+      const buf = await readAsArrayBuffer(f);
+      const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+      const bill = makeBill(f.name, parseInvoice(await readPdfLines(doc)));
+      autoMatchParty(bill);
+      autoMatchLines(bill);
+      state.bills.push(bill);
+      done++;
+    } catch (e) {
+      showError("Couldn't read " + f.name, e.message);
+    }
+  }
+  zone.classList.remove("busy");
+  sub.textContent = subText;
+  if (done) zone.classList.add("filled");
+  renderAll();
+}
+
+function wireZone(zoneId, inputId, handler) {
+  const zone = document.getElementById(zoneId);
+  const input = document.getElementById(inputId);
+  zone.addEventListener("click", () => input.click());
+  zone.addEventListener("keydown", ev => {
+    if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); input.click(); }
+  });
+  // Clearing the value on click means re-picking the same file still fires change.
+  input.addEventListener("click", ev => { ev.stopPropagation(); ev.target.value = ""; });
+  input.addEventListener("change", ev => {
+    const files = Array.from(ev.target.files || []);
+    if (files.length) handler(files);
+  });
+  ["dragenter", "dragover"].forEach(t => zone.addEventListener(t, ev => {
+    ev.preventDefault(); ev.stopPropagation(); zone.classList.add("drag");
+  }));
+  ["dragleave", "dragend"].forEach(t => zone.addEventListener(t, ev => {
+    ev.preventDefault(); ev.stopPropagation(); zone.classList.remove("drag");
+  }));
+  zone.addEventListener("drop", ev => {
+    ev.preventDefault(); ev.stopPropagation(); zone.classList.remove("drag");
+    const files = Array.from(ev.dataTransfer && ev.dataTransfer.files ? ev.dataTransfer.files : []);
+    if (files.length) handler(files);
+  });
+}
+
+wireZone("zoneExcel", "fileExcel", files => loadPlanFile(files[0]));
+wireZone("zonePdf", "filePdf", files => loadBillFiles(files));
+
+// A file dropped anywhere else would otherwise open in the browser and lose the
+// session, so the whole window accepts drops and routes them by extension.
+["dragover", "drop"].forEach(t => window.addEventListener(t, ev => {
+  if (ev.target && ev.target.closest && ev.target.closest(".dropzone")) return;
+  ev.preventDefault();
+  if (t !== "drop") return;
+  const files = Array.from(ev.dataTransfer && ev.dataTransfer.files ? ev.dataTransfer.files : []);
+  const sheets = files.filter(f => /\.(xlsx|xlsm|xls)$/i.test(f.name));
+  const pdfs = files.filter(f => /\.pdf$/i.test(f.name));
+  if (sheets.length) loadPlanFile(sheets[0]);
+  if (pdfs.length) loadBillFiles(pdfs);
+  if (!sheets.length && !pdfs.length) showError("Unrecognised file", "drop an .xlsx loading plan or .pdf bills");
+}));
+
+document.getElementById("stripExcel").addEventListener("click", ev => {
+  if (ev.target.getAttribute("data-act") !== "clearplan") return;
+  state.plan = null;
+  state.bills.forEach(b => { b.lines.forEach(l => { l.manual = false; l.rowIdx = null; }); autoMatchParty(b); });
+  document.getElementById("zoneExcel").classList.remove("filled");
+  document.getElementById("stripExcel").className = "strip";
+  renderAll();
+});
+
+/* ==========================================================================
+   11. EVENT DELEGATION
+   One listener per container. Redraws replace the DOM wholesale, so nothing is
+   ever left holding a dead handler.
+   ========================================================================== */
+
+function billOf(el) { return state.bills.find(b => b.id === el.getAttribute("data-bill")); }
+function rowOf(bill, el) {
+  if (!state.plan || bill.blockIdx == null) return null;
+  const block = state.plan.blocks[bill.blockIdx];
+  const li = parseInt(el.getAttribute("data-line"), 10);
+  const idx = bill.lines[li] ? bill.lines[li].rowIdx : null;
+  return (idx != null && block.rows[idx]) ? block.rows[idx] : null;
+}
+
+document.getElementById("cards").addEventListener("change", ev => {
+  const t = ev.target, act = t.getAttribute("data-act");
+  if (!act) return;
+  const bill = billOf(t);
+  if (!bill) return;
+
+  if (act === "party") {
+    bill.blockIdx = t.value === "" ? null : parseInt(t.value, 10);
+    bill.partyAuto = false;
+    bill.lines.forEach(l => { l.manual = false; l.rowIdx = null; });
+    autoMatchLines(bill);
+  } else if (act === "row") {
+    const li = parseInt(t.getAttribute("data-line"), 10);
+    const val = t.value === "" ? null : parseInt(t.value, 10);
+    if (val != null) bill.lines.forEach((l, i) => {
+      if (i !== li && l.rowIdx === val) { l.rowIdx = null; l.manual = false; }
+    });
+    bill.lines[li].rowIdx = val;
+    bill.lines[li].manual = true;
+    bill.lines[li].review = false;
+  } else if (act === "kind") {
+    const row = rowOf(bill, t);
+    if (row) row.kindOverride = t.value || null;
+  } else if (act === "rolllen") {
+    const row = rowOf(bill, t);
+    const v = parseFloat(t.value);
+    if (row) row.rollLenFt = (isFinite(v) && v > 0) ? v : null;
+  }
+  renderAll();
+});
+
+document.getElementById("cards").addEventListener("click", ev => {
+  const t = ev.target.closest ? ev.target.closest("button[data-act]") : null;
+  if (!t) return;
+  const act = t.getAttribute("data-act");
+  const idx = state.bills.findIndex(b => b.id === t.getAttribute("data-bill"));
+  if (idx < 0) return;
+  const bill = state.bills[idx];
+
+  if (act === "log") {
+    const n = logBill(bill);
+    t.textContent = n ? ("Logged " + n) : "Nothing new to log";
+    setTimeout(() => { t.textContent = "Add flags to log"; }, 1800);
+  } else if (act === "rematch") {
+    bill.lines.forEach(l => { l.manual = false; l.rowIdx = null; });
+    autoMatchLines(bill);
+    renderAll();
+  } else if (act === "drop") {
+    state.bills.splice(idx, 1);
+    if (!state.bills.length) document.getElementById("zonePdf").classList.remove("filled");
+    renderAll();
+  }
+});
+
+document.getElementById("ruleGrid").addEventListener("change", ev => {
+  const k = ev.target.getAttribute("data-key");
+  if (!k) return;
+  const v = parseFloat(ev.target.value);
+  // A zero divisor or a zero roll length would produce infinities across the whole
+  // audit, so a bad value is refused and the field snaps back.
+  if (!isFinite(v) || ((k === "taxDivisor" || k === "rollLengthFt") && v <= 0) || v < 0) {
+    ev.target.value = state.rules[k];
+    return;
+  }
+  state.rules[k] = v;
+  savePersisted();
+  renderAll();
+});
+
+document.getElementById("panelCodes").addEventListener("change", ev => {
+  const t = ev.target, act = t.getAttribute("data-act");
+  if (!act) return;
+  if (act === "ap") {
+    const pairs = t.value.split(",").map(s => s.trim()).filter(Boolean)
+      .map(s => s.split(/x/i).map(n => parseFloat(n)))
+      .filter(p => p.length === 2 && isFinite(p[0]) && isFinite(p[1]));
+    state.aperture[t.getAttribute("data-kind")][t.getAttribute("data-code")] = pairs;
+  } else if (act === "thsheet") {
+    const v = parseFloat(t.value); if (isFinite(v) && v > 0) state.thickness.sheet[t.getAttribute("data-code")] = v;
+  } else if (act === "throll") {
+    const v = parseFloat(t.value); if (isFinite(v) && v > 0) state.thickness.roll[t.getAttribute("data-code")] = v;
+  }
+  savePersisted();
+  state.bills.forEach(b => { b.lines.forEach(l => { if (!l.manual) l.rowIdx = null; }); autoMatchLines(b); });
+  renderAll();
+});
+
+document.getElementById("btnResetCodes").addEventListener("click", () => {
+  state.aperture = JSON.parse(JSON.stringify(DEFAULT_APERTURE));
+  state.thickness = JSON.parse(JSON.stringify(DEFAULT_THICKNESS));
+  savePersisted(); renderCodes();
+  state.bills.forEach(b => { b.lines.forEach(l => { l.manual = false; l.rowIdx = null; }); autoMatchLines(b); });
+  renderAll();
+});
+
+/* ---- panel toggles ---- */
+function syncToggleStates() {
+  const btns = document.querySelectorAll(".toggle-btn[data-panel]");
+  Array.prototype.forEach.call(btns, btn => {
+    const p = document.getElementById(btn.getAttribute("data-panel"));
+    btn.classList.toggle("on", !!p && p.classList.contains("open"));
+  });
+}
+Array.prototype.forEach.call(document.querySelectorAll(".toggle-btn[data-panel]"), btn => {
+  btn.addEventListener("click", () => {
+    document.getElementById(btn.getAttribute("data-panel")).classList.toggle("open");
+    syncToggleStates();
+  });
+});
+
+document.getElementById("btnShot").addEventListener("click", () => {
+  const on = document.body.classList.toggle("shot");
+  const b = document.getElementById("btnShot");
+  b.classList.toggle("on", on);
+  b.textContent = on ? "Back to editing" : "Screenshot mode";
+});
+document.getElementById("btnCsv").addEventListener("click", exportCsv);
+document.getElementById("btnClear").addEventListener("click", () => {
+  state.bills = [];
+  clearErrors();
+  document.getElementById("zonePdf").classList.remove("filled");
+  renderAll();
+});
+document.getElementById("btnLogCsv").addEventListener("click", exportLogCsv);
+document.getElementById("btnLogClear").addEventListener("click", () => {
+  if (!state.log.length) return;
+  state.log = []; savePersisted(); renderLog();
+});
+
+/* ---- boot ---- */
+loadPersisted();
+renderRules();
+renderCodes();
+renderLog();
+renderAll();
+syncToggleStates();
+</script>
+</body>
+</html>
