@@ -631,6 +631,18 @@ function isFivePct(text){
 function parsePlanSpec(rawName){
   const name = String(rawName || '').trim();
   const s = name.toLowerCase();
+  // Second plan style: "Diamond 65x65x4.1mm 12x5" (aperture x aperture x thickness mm, then length x height)
+  const m2 = s.match(/(\d+(?:\/\d+)?)\s*x\s*(\d+(?:\/\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*mm\s*(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)/);
+  if(m2){
+    const q2 = s.slice(0, m2.index).replace(/[^a-z ]+/g, ' ').trim().replace(/\s+/g, ' ');
+    const rest2 = s.slice(m2.index + m2[0].length);
+    const lite2 = /\blite\b/.test(rest2), heavy2 = /\bheavy\b/.test(rest2);
+    return {
+      kind: 'sheet', label: name, ap: m2[1] + 'x' + m2[2], lite: lite2, heavy: heavy2,
+      asSheet: { L: parseFloat(m2[4]), H: parseFloat(m2[5]), thickCode: (q2 ? q2 + ' ' : '') + m2[3] + 'mm' + (lite2 ? ' lite' : heavy2 ? ' heavy' : '') },
+      asRoll: { gauge: parseFloat(m2[4]), widthFt: parseFloat(m2[5]) }
+    };
+  }
   const m = s.match(/(\d+(?:\/\d+)?)\s*x\s*(\d+(?:\/\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)/);
   if(!m) return { kind: 'other', label: name };
   const n3 = parseFloat(m[3]), n4 = parseFloat(m[4]);
@@ -922,6 +934,7 @@ function convertExcelQtyToBilledUnit(nos, row, planRow){
     row.planSpec = ps;
     if(ps.kind === 'sheet'){ row.category = 'sheet'; row.heightFt = ps.asSheet.H; row.customLengthFt = ps.asSheet.L; }
     else if(ps.kind === 'roll'){ row.category = 'roll'; row.heightFt = ps.asRoll.widthFt; row.customLengthFt = null; }
+    else if((row.category === 'sheet' || row.category === 'roll') && row.heightFt != null){ /* plan name unreadable: keep the size read from the bill line */ }
     else{ row.category = isFivePct(ps.label) ? 'direct5' : (unitClass(row.unit) === 'kg' ? 'directKg' : 'directNos'); }
   }
   row.planNos = nos;
