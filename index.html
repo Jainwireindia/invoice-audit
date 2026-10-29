@@ -1,49 +1,596 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-branch="ekm">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Invoice Audit — Jain Wire</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2214%22%20fill%3D%22%231E2A38%22/%3E%3Cg%20stroke%3D%22%231D6CA6%22%20stroke-opacity%3D%22.6%22%20stroke-width%3D%222%22%3E%3Cpath%20d%3D%22M8%2020H56M8%2032H56M8%2044H56M20%208V56M32%208V56M44%208V56%22/%3E%3C/g%3E%3Crect%20x%3D%2217%22%20y%3D%2210%22%20width%3D%2226%22%20height%3D%2236%22%20rx%3D%223%22%20fill%3D%22%23FAF7EF%22/%3E%3Cpath%20d%3D%22M22%2018H38M22%2024H38M22%2030H32%22%20stroke%3D%22%231E2A38%22%20stroke-opacity%3D%22.45%22%20stroke-width%3D%222.5%22%20stroke-linecap%3D%22round%22/%3E%3Ccircle%20cx%3D%2243%22%20cy%3D%2244%22%20r%3D%2212%22%20fill%3D%22%231D6CA6%22%20stroke%3D%22%231E2A38%22%20stroke-width%3D%223%22/%3E%3Cpath%20d%3D%22M37.5%2044.5l4%204%207.5-8%22%20fill%3D%22none%22%20stroke%3D%22%23fff%22%20stroke-width%3D%223.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22/%3E%3C/svg%3E">
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Invoice Audit</title>
+<meta name="theme-color" content="#1E2A38">
+<meta name="description" content="Checks Jain Wire sales bills against the day's rate sheet or loading plan.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<script>
+// Pick the branch before anything paints, so the colours are right from the first frame.
+// ?branch=ekm / ?branch=clt in the address also switches (and is remembered).
+(function(){
+  var b = 'ekm';
+  try{
+    var q = new URLSearchParams(location.search).get('branch');
+    if(q === 'ekm' || q === 'clt') localStorage.setItem('ia.branch', q);
+    b = localStorage.getItem('ia.branch') || 'ekm';
+  }catch(e){}
+  if(b !== 'clt') b = 'ekm';
+  document.documentElement.setAttribute('data-branch', b);
+  window.IA_BRANCH = b;
+  // Chrome may offer "install" before the app's code has loaded — keep the offer for it.
+  window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); window.__installEvt = e; });
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
-  :root{ --paper:#EEF1F4; --card:#FFFFFF; --ink:#13202E; --soft:#5A6B7C; --rule:#D3DCE4; --accent:#1D6CA6; --gold:#A9832E; }
-  @media (prefers-color-scheme: dark){ :root{ --paper:#10171F; --card:#18222D; --ink:#E6ECF2; --soft:#93A4B5; --rule:#2A3746; --accent:#6CB1E4; --gold:#D4AE5A; } }
-  *{ box-sizing:border-box; }
-  body{ margin:0; background:var(--paper); color:var(--ink); font-family:'IBM Plex Sans',system-ui,sans-serif; }
-  .wrap{ max-width:760px; margin:0 auto; padding:64px 16px; }
-  .eyebrow{ font-family:'IBM Plex Mono',monospace; font-size:12px; letter-spacing:.2em; color:var(--accent); margin:0 0 10px; }
-  h1{ font-family:'Fraunces',Georgia,serif; font-size:38px; margin:0 0 10px; line-height:1.1; }
-  p.lede{ color:var(--soft); margin:0 0 36px; max-width:56ch; line-height:1.55; }
-  .grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-  @media (max-width:600px){ .grid{ grid-template-columns:1fr; } }
-  a.branch{ display:block; background:var(--card); border:1px solid var(--rule); border-top:4px solid var(--c); border-radius:6px;
-    padding:24px 22px; text-decoration:none; color:var(--ink); transition:border-color .15s, transform .15s; }
-  a.branch:hover, a.branch:focus-visible{ border-color:var(--c); transform:translateY(-2px); outline:none; }
-  .code{ font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--c); }
-  .name{ font-family:'Fraunces',Georgia,serif; font-size:24px; margin:6px 0 8px; }
-  .what{ font-size:13px; color:var(--soft); line-height:1.5; }
-  footer{ margin-top:40px; font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--soft); line-height:1.7; }
+  :root{
+    /* ---- branch colours: background family + accent (the ONLY colours that differ by branch) ---- */
+    --paper: #F3EFE4;
+    --paper-raised: #FAF7EF;
+    --paper-sunk: #FDFBF4;
+    --rule: #D6CFBB;
+    --rule-strong: #B9AF95;
+    --rule-soft: #EEE9DC;
+    --gold: #A9832E;
+    --accent-bg: rgba(169,131,46,0.08);
+    /* ---- shared colours ---- */
+    --ink: #1E2A38;
+    --ink-soft: #4A5A6A;
+    --green: #2F6844;
+    --green-bg: #E7EEE4;
+    --red: #A63A2E;
+    --red-bg: #F3E4DE;
+    --amber: #A9832E;
+    --amber-bg: #F2ECD9;
+  }
+
+  /* Calicut · Kannur: light blue paper, blue accent — the only colours that change with the branch */
+  :root[data-branch="clt"]{
+    --paper: #E9F0F6;
+    --paper-raised: #F7FAFC;
+    --paper-sunk: #F1F6FA;
+    --rule: #D5E2EC;
+    --rule-strong: #B2C8DA;
+    --rule-soft: #E3ECF3;
+    --gold: #1D6CA6;
+    --accent-bg: rgba(29,108,166,0.08);
+  }
+
+  *{ box-sizing: border-box; }
+
+  body{
+    margin:0;
+    background: var(--paper);
+    background-image: linear-gradient(var(--rule) 1px, transparent 1px);
+    background-size: 100% 34px;
+    color: var(--ink);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    padding: 40px 20px 80px;
+  }
+
+  .wrap{ max-width: 1080px; margin: 0 auto; }
+
+  header{ margin-bottom: 22px; }
+  header .eyebrow{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--gold); margin: 0 0 6px;
+  }
+  h1{
+    font-family: 'Fraunces', serif; font-weight: 700; font-size: 32px;
+    margin: 0 0 8px; letter-spacing: -0.01em;
+  }
+  header p{ color: var(--ink-soft); font-size: 14.5px; max-width: 660px; line-height: 1.5; margin: 0; }
+
+  .toggles{ display:flex; flex-wrap:wrap; gap:8px; margin: 16px 0 20px; }
+  .toggle-btn{
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--ink-soft);
+    background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 3px;
+    padding: 7px 12px; cursor: pointer;
+  }
+  .toggle-btn:hover{ border-color: var(--gold); }
+
+  .panel{
+    background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 4px;
+    padding: 18px 20px; margin-bottom: 22px; display: none;
+  }
+  .panel.open{ display:block; }
+  .panel h3{ font-family:'Fraunces', serif; font-size:16px; margin: 0 0 4px; }
+  .panel .desc{ font-size:12.5px; color: var(--ink-soft); margin: 0 0 14px; line-height:1.5; }
+  .rule-row{
+    display:grid; grid-template-columns: 150px 1fr 70px 70px 90px;
+    gap: 10px; align-items:center; padding: 8px 0; border-bottom: 1px solid var(--rule);
+    font-size: 12.5px;
+  }
+  .rule-row.head{ font-weight:600; color: var(--ink-soft); text-transform:uppercase; font-size:10.5px; letter-spacing:0.04em; }
+  .rule-row input{ width:100%; }
+
+  .code-table{ width:100%; border-collapse:collapse; font-size:12px; table-layout:fixed; }
+  .code-table th{ text-align:left; font-size:10px; text-transform:uppercase; color:var(--ink-soft); border-bottom:1px solid var(--rule-strong); padding:5px 4px; }
+  .code-table td{ padding:5px 4px; border-bottom:1px solid var(--rule); font-family:'IBM Plex Mono', monospace; }
+  .code-table td.code{ white-space:nowrap; font-weight:600; padding-right:2px; }
+  .code-table td.spec{ padding-left:2px; }
+  .code-scroll{ max-height: 260px; overflow-y:auto; border: 1px solid var(--rule); border-radius:3px; }
+  .code-search-row{ margin-bottom:10px; }
+  .code-search-row input{
+    width:100%; font-family:'IBM Plex Mono', monospace; font-size:12.5px;
+    border:1px solid var(--rule-strong); border-radius:3px; padding:8px 10px; background:#fff;
+  }
+  .add-code-row{ display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+  .bulk-paste-box textarea{ width:100%; min-height:90px; font-family:'IBM Plex Mono', monospace; font-size:12px; border:1px solid var(--rule-strong); border-radius:3px; padding:8px; background:#fff; resize:vertical; }
+  .bulk-paste-box button{ margin-top:8px; font-family:'IBM Plex Mono', monospace; font-size:12px; background:var(--ink); color:var(--paper-raised); border:none; border-radius:2px; padding:6px 12px; cursor:pointer; }
+  .bulk-add-status{ margin-left:10px; font-family:'IBM Plex Mono', monospace; font-size:11.5px; color: var(--green); }
+  .add-code-row input{ font-family:'IBM Plex Mono', monospace; font-size:12px; border:1px solid var(--rule-strong); border-radius:2px; padding:6px 8px; background:#fff; }
+  .add-code-row input.code-in{ width:180px; }
+  .add-code-row input.label-in{ flex:1; min-width:220px; }
+  .add-code-row button{ font-family:'IBM Plex Mono', monospace; font-size:12px; background:var(--ink); color:var(--paper-raised); border:none; border-radius:2px; padding:6px 12px; cursor:pointer; }
+
+  .dropzone{
+    background: var(--paper-raised); border: 2px dashed var(--rule-strong); border-radius: 4px;
+    padding: 26px 24px; text-align: center; cursor: pointer;
+    transition: border-color .15s ease, background .15s ease; margin-bottom: 16px;
+  }
+  .dropzone:hover, .dropzone.drag{ border-color: var(--gold); background: var(--paper-sunk); }
+  .dropzone .icon{ font-size: 22px; margin-bottom: 6px; }
+  .dropzone .main{ font-weight: 600; font-size: 14px; margin-bottom: 3px; }
+  .dropzone .sub{ font-size: 12px; color: var(--ink-soft); }
+  .dropzone input{ display:none; }
+
+  .zones{ display:grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 10px; }
+  @media (max-width: 700px){ .zones{ grid-template-columns: 1fr; } }
+
+  .excel-status{
+    font-family:'IBM Plex Mono', monospace; font-size:12.5px; color: var(--green);
+    background: var(--green-bg); border: 1px solid var(--green); border-radius: 4px;
+    padding: 10px 14px; margin-bottom: 22px; display:none;
+  }
+  .excel-status.show{ display:block; }
+  .excel-status .clear-link{ margin-left:10px; color: var(--red); cursor:pointer; text-decoration:underline; }
+
+  .tally-bar{
+    font-family:'IBM Plex Mono', monospace; font-size:12.5px; color: var(--ink-soft);
+    background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 4px;
+    padding: 10px 14px; margin-bottom: 18px; display:none; line-height:1.6;
+  }
+  .tally-bar.show{ display:block; }
+  .tally-bar .missing{ color: var(--red); }
+
+  body.screenshot-mode .invoice-card.clean-bill .items-table,
+  body.screenshot-mode .invoice-card.clean-bill .match-box,
+  body.screenshot-mode .invoice-card.clean-bill .total-check-row,
+  body.screenshot-mode .invoice-card.clean-bill .card-actions{
+    display: none;
+  }
+  body.screenshot-mode .invoice-card.clean-bill{ padding-bottom: 20px; }
+
+  /* Long bills used to run past the bottom of the screen, so the party name at the top and a
+     discrepancy further down couldn't be captured in one shot. In screenshot mode the item area
+     gets a fixed height and scrolls internally: the card header (party name, invoice no, subtotal
+     line, stamp), the discrepancy summary banner, and the totals below all stay pinned in frame.
+     Every line stays visible in bill order inside the scroll area — nothing is hidden — the
+     summary banner at the top is what makes the discrepancies readable without scrolling.
+     Normal editing view is untouched. */
+  body.screenshot-mode .invoice-card:not(.clean-bill) .items-table{
+    max-height: 300px;
+    overflow-y: auto;
+    overflow-x: auto;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+  }
+  /* Keep the column header visible while that area scrolls, so a screenshot of a scrolled
+     position still shows which column is which. */
+  body.screenshot-mode .invoice-card:not(.clean-bill) .items-table thead th{
+    position: sticky;
+    top: 0;
+    background: var(--paper-raised);
+    z-index: 2;
+  }
+
+  /* Flagged bills stay fully expanded in screenshot mode — make the actual discrepancy text bigger
+     and bolder, since this is what gets read straight off a phone screenshot by someone else. */
+  body.screenshot-mode .rate-note,
+  body.screenshot-mode .other-note,
+  body.screenshot-mode .item-mismatch-note,
+  body.screenshot-mode .not-dispatched-note,
+  body.screenshot-mode .bundle-note,
+  body.screenshot-mode .qty-note{
+    font-size: 14px;
+    font-weight: 700;
+  }
+  body.screenshot-mode .missing-item-row{
+    font-size: 15px;
+  }
+  body.screenshot-mode .party-mismatch-tag{
+    font-size: 15px;
+  }
+
+  .processing{
+    font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--ink-soft);
+    display:flex; align-items:center; gap:10px; margin: 0 0 22px;
+  }
+  .spinner{
+    width: 14px; height:14px; border: 2px solid var(--rule-strong); border-top-color: var(--gold);
+    border-radius: 50%; animation: spin .8s linear infinite;
+  }
+  @keyframes spin{ to{ transform: rotate(360deg); } }
+
+  .card{
+    position: relative; background: var(--paper-raised); border: 1px solid var(--rule);
+    border-radius: 4px; padding: 24px 24px 18px; margin-bottom: 22px; overflow: hidden;
+  }
+  .stamp{
+    position: absolute; top: 16px; right: 20px; width: 98px; height: 98px;
+    border-radius: 48% 52% 51% 49% / 52% 48% 52% 48%; border: 3px double currentColor;
+    display:flex; align-items:center; justify-content:center; text-align:center;
+    font-family:'IBM Plex Mono', monospace; font-weight: 700; font-size: 11px;
+    letter-spacing: 0.04em; text-transform: uppercase; transform: rotate(-9deg);
+    opacity: 0.9; line-height:1.25; padding: 6px;
+  }
+  .stamp.ok{ color: var(--green); background: radial-gradient(circle, var(--green-bg) 60%, transparent 100%); }
+  .stamp.bad{ color: var(--red); background: radial-gradient(circle, var(--red-bg) 60%, transparent 100%); }
+  .stamp.pending{ color: var(--amber); background: radial-gradient(circle, var(--amber-bg) 60%, transparent 100%); }
+
+  .card .meta{ max-width: 68%; margin-bottom: 6px; }
+  .card .vendor{ font-family:'Fraunces', serif; font-weight:600; font-size: 18px; margin: 0 0 4px; }
+  .card .subline{ font-size: 12px; color: var(--ink-soft); font-family:'IBM Plex Mono', monospace; }
+  .card .total-check{ font-size: 11.5px; font-family:'IBM Plex Mono', monospace; margin: 6px 0 14px; }
+  .card .total-check.ok{ color: var(--green); }
+  .card .total-check.bad{ color: var(--red); }
+  .card .total-check.na{ color: var(--ink-soft); }
+
+  .match-box{
+    background: var(--amber-bg); border: 1px solid var(--amber); border-radius: 4px;
+    padding: 14px 16px; margin-bottom: 18px; font-size: 13px;
+  }
+  .match-box.confirmed{ background: var(--green-bg); border-color: var(--green); }
+  .match-box .row{ display:flex; gap: 18px; flex-wrap:wrap; align-items:center; margin-bottom: 8px; }
+  .match-box .field{ font-family:'IBM Plex Mono', monospace; font-size: 12px; }
+  .match-box .field b{ color: var(--ink-soft); font-weight:600; display:block; font-size:10px; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:2px; }
+  .match-box select{ font-family:'IBM Plex Mono', monospace; font-size:12.5px; padding:6px 8px; border:1px solid var(--rule-strong); border-radius:3px; background:#fff; min-width:220px; }
+  .match-box button{ font-family:'IBM Plex Mono', monospace; font-size:12px; background:var(--ink); color:var(--paper-raised); border:none; border-radius:3px; padding:7px 14px; cursor:pointer; }
+  .match-box .confirmed-tag{ font-family:'IBM Plex Mono', monospace; font-size:12px; color: var(--green); font-weight:600; }
+  .match-box .change-link{ font-family:'IBM Plex Mono', monospace; font-size:11.5px; color: var(--ink-soft); text-decoration:underline; cursor:pointer; margin-left:8px; }
+  .match-box .no-excel-note{ color: var(--ink-soft); font-size:12.5px; }
+  .match-box .party-mismatch-tag{ font-family:'IBM Plex Mono', monospace; font-size:12px; color: var(--red); font-weight:700; }
+  .match-box .manual-note{ font-size:11.5px; color: var(--ink-soft); margin-bottom:8px; font-family:'IBM Plex Mono', monospace; }
+  .rate-note, .item-mismatch-note, .not-dispatched-note, .other-note{ font-size:10.5px; color: var(--red); font-family:'IBM Plex Mono', monospace; margin-top:2px; font-weight:600; }
+  .missing-items-box{ border-top: 2px solid var(--red); margin-top: 4px; padding-top: 10px; }
+  .missing-item-row{ font-size: 12.5px; font-family:'IBM Plex Mono', monospace; color: var(--red); font-weight:600; background: var(--red-bg); border: 1px solid var(--red); border-radius: 3px; padding: 8px 10px; margin-bottom: 6px; }
+
+  .items-table{ width:100%; overflow-x:auto; }
+  table{ width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 1020px; }
+  thead th{
+    text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--ink-soft); border-bottom: 1px solid var(--rule-strong); padding: 6px 6px; font-weight: 600;
+  }
+  thead th.num{ text-align: right; }
+  tbody td{
+    padding: 7px 6px; border-bottom: 1px solid var(--rule); font-family:'IBM Plex Mono', monospace;
+    vertical-align: middle;
+  }
+  tbody td.desc{ font-family:'Inter', sans-serif; max-width:170px; }
+  tr.flag td{ background: var(--red-bg); }
+  tr.pending td{ background: var(--amber-bg); }
+  .status{ font-size: 15px; text-align:center; }
+  .status.ok{ color: var(--green); }
+  .status.bad{ color: var(--red); font-weight:700; }
+  .status.pending{ color: var(--amber); }
+
+  .cell-input{
+    width: 70px; font-family:'IBM Plex Mono', monospace; font-size:12.5px;
+    border: 1px solid var(--rule-strong); border-radius: 2px; padding: 4px 5px; background:#fff;
+  }
+  .cell-select{
+    font-family:'IBM Plex Mono', monospace; font-size:11.5px; border: 1px solid var(--rule-strong);
+    border-radius: 2px; padding: 4px 3px; background:#fff; width: 96px;
+  }
+  .rate-cell{ display:flex; align-items:center; gap:4px; justify-content:flex-end; }
+  .fill-btn{
+    font-family:'IBM Plex Mono', monospace; font-size: 10px; color: var(--ink-soft);
+    background: var(--paper); border: 1px solid var(--rule-strong); border-radius: 2px;
+    padding: 3px 5px; cursor: pointer; line-height:1;
+  }
+  .fill-btn:hover{ border-color: var(--gold); color: var(--ink); }
+  .excel-code-hint{ font-size:10px; color: var(--ink-soft); font-family:'IBM Plex Mono', monospace; margin-top:2px; }
+  .discrepancy-summary{
+    background: var(--red-bg);
+    border: 1px solid var(--red);
+    border-radius: 4px;
+    padding: 12px 14px;
+    margin-bottom: 16px;
+  }
+  .discrepancy-summary-head{
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--red);
+    margin-bottom: 8px;
+  }
+  .discrepancy-summary-line{
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--red);
+    line-height: 1.65;
+  }
+  .line-count-note{
+    color: var(--ink-soft);
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 11.5px;
+    line-height: 1.6;
+    margin-top: 12px;
+  }
+  /* In screenshot mode the summary banner IS the message — make it big enough to read
+     off a phone photo, and drop the bottom note, which is context nobody needs in a screenshot. */
+  body.screenshot-mode .discrepancy-summary-head{ font-size: 15px; }
+  body.screenshot-mode .discrepancy-summary-line{ font-size: 14px; font-weight: 600; }
+  body.screenshot-mode .line-count-note{ display: none; }
+
+  .spec-match-box{ color: var(--green); background: var(--green-bg); border: 1px solid var(--green); border-radius: 3px; padding: 3px 6px; }  .spec-mismatch-box{ color: #7A5E10; background: var(--amber-bg); border: 1px solid var(--amber); border-radius: 3px; padding: 3px 6px; font-weight: 600; }
+  .mismatch-toggle{ display:flex; align-items:center; gap:4px; font-size:10.5px; color: var(--red); font-family:'IBM Plex Mono', monospace; margin-top:3px; cursor:pointer; user-select:none; }
+  .mismatch-toggle input{ cursor:pointer; }
+  .info-note{ font-size:10.5px; color: #8a6a1e; font-family:'IBM Plex Mono', monospace; margin-top:2px; }
+  .qty-calc{ font-family:'IBM Plex Mono', monospace; font-size: 9.5px; color: var(--ink-soft); margin-top: 2px; white-space: nowrap; }
+  .entity-tag{ font-family:'IBM Plex Mono', monospace; font-size: 11px; color: var(--gold); font-weight: 600; }
+  body.screenshot-mode [data-preview]{ display: none; }
+  .match-edit{ align-items: flex-end; gap: 14px; }
+  .match-status{ padding-bottom: 6px; }
+  .ss-only{ display: none !important; }
+  body.screenshot-mode .ss-only{ display: flex !important; }
+  body.screenshot-mode .match-edit{ display: none !important; }
+  .bundle-note, .qty-note{ font-size:10.5px; color: var(--red); font-family:'IBM Plex Mono', monospace; margin-top:2px; font-weight:600; }
+
+  tfoot td{
+    padding: 10px 6px 4px; font-family:'IBM Plex Mono', monospace; font-weight: 600;
+    border-top: 2px solid var(--ink);
+  }
+  tfoot tr.flag td{ background: var(--red-bg); }
+
+  .card-actions{ margin-top: 14px; display:flex; gap:10px; }
+  .card-actions button{
+    font-family:'IBM Plex Mono', monospace; font-size: 11.5px; color: var(--ink-soft);
+    background: var(--paper); border: 1px solid var(--rule-strong); border-radius: 3px;
+    padding: 6px 10px; cursor:pointer;
+  }
+  .card-actions button:hover{ border-color: var(--gold); color: var(--ink); }
+
+  .error-box{
+    border: 1px solid var(--red); background: var(--red-bg); color: var(--red); border-radius: 4px;
+    padding: 14px 16px; font-size: 13.5px; margin-bottom: 24px;
+  }
+  .error-box strong{ display:block; margin-bottom: 3px; }
+  .dn-box{
+    border: 1px solid var(--rule-strong); background: var(--paper-raised); color: var(--ink-soft); border-radius: 4px;
+    padding: 10px 16px; font-size: 13px; margin-bottom: 16px; display:flex; align-items:center; gap:12px;
+  }
+  .dn-box .dn-tag{
+    font-family:'IBM Plex Mono', monospace; font-size: 11px; font-weight:600; color: var(--ink);
+    border: 1px solid var(--rule-strong); border-radius: 3px; padding: 2px 7px; white-space:nowrap;
+  }
+  .dn-box .dn-text{ flex:1; }
+  .dn-box .dn-close{ cursor:pointer; font-family:'IBM Plex Mono', monospace; font-size: 12px; color: var(--ink-soft); }
+  .error-box button{
+    margin-top: 8px; font-family:'IBM Plex Mono', monospace; font-size: 11.5px; color: var(--red);
+    background: #fff; border: 1px solid var(--red); border-radius: 3px; padding: 5px 10px; cursor:pointer;
+  }
+
+  .export-bar{ text-align:right; margin: 0 0 22px; }
+  .export-bar button{
+    font-family:'IBM Plex Mono', monospace; font-size: 12px; color: var(--ink-soft);
+    background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 3px;
+    padding: 7px 12px; cursor: pointer;
+  }
+  .export-bar button:hover{ border-color: var(--gold); }
+
+  footer{
+    text-align:center; color: var(--ink-soft); font-size: 11.5px;
+    font-family:'IBM Plex Mono', monospace; margin-top: 30px; line-height:1.6;
+  }
+
+  .brand-logo{ display:inline-block; width:34px; height:34px; vertical-align:-6px; margin-right:12px; }
+  .brand-logo svg{ width:100%; height:100%; display:block; }
+  .version-badge{
+    display:inline-block; vertical-align: middle; margin-left:10px;
+    font-family:'IBM Plex Mono', monospace; font-size: 12px; font-weight:600;
+    color: var(--gold); border: 1px solid var(--gold); border-radius: 3px;
+    padding: 1px 7px; letter-spacing: 0.02em;
+  }
+
+  /* ---- v6.2: batch progress ---- */
+  .batch-progress{ background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 4px; padding: 12px 16px; margin-bottom: 16px; }
+  .bp-text{ display:flex; align-items:center; gap:10px; font-size: 13.5px; }
+  .bp-bar{ height: 6px; background: var(--rule); border-radius: 3px; margin: 10px 0 6px; overflow:hidden; }
+  .bp-fill{ height:100%; background: var(--gold); transition: width .15s; }
+  .bp-counts{ font-family:'IBM Plex Mono', monospace; font-size: 11.5px; color: var(--ink-soft); }
+
+  /* ---- v6.2: bill overview ---- */
+  .overview{ display:none; background: var(--paper-raised); border: 1px solid var(--rule-strong); border-radius: 4px; padding: 16px 18px; margin-bottom: 20px; scroll-margin-top: 12px; }
+  .overview.show{ display:block; }
+  .ov-head{ display:flex; justify-content:space-between; align-items:flex-start; gap: 14px; flex-wrap: wrap; }
+  .ov-head h3{ font-family:'Fraunces', serif; font-size: 20px; margin: 0 0 4px; }
+  .ov-sub{ font-size: 13px; color: var(--ink-soft); }
+  .ov-batch{ font-family:'IBM Plex Mono', monospace; font-size: 11.5px; color: var(--ink-soft); margin-top: 4px; }
+  .ov-actions{ display:flex; gap: 8px; flex-wrap: wrap; align-items:center; }
+  .ov-actions button{ font-family:'IBM Plex Mono', monospace; font-size: 12px; color: var(--ink); background: #fff; border: 1px solid var(--rule-strong); border-radius: 3px; padding: 6px 10px; cursor:pointer; }
+  .ov-actions button:hover:not([disabled]){ border-color: var(--gold); }
+  .ov-actions button[disabled]{ opacity: .45; cursor: default; }
+  .ov-actions .ov-danger{ color: var(--red); }
+  .ov-collapse{ font-size: 12px; color: var(--ink-soft); display:flex; align-items:center; gap: 4px; cursor:pointer; }
+  .ov-chips{ display:flex; flex-wrap:wrap; gap: 6px; margin: 12px 0 10px; }
+  .ov-chip{ font-family:'IBM Plex Mono', monospace; font-size: 11.5px; color: var(--ink-soft); background: #fff; border: 1px solid var(--rule); border-radius: 12px; padding: 4px 10px; cursor:pointer; }
+  .ov-chip .n{ font-weight: 600; color: var(--ink); margin-left: 2px; }
+  .ov-chip.active{ background: var(--ink); color: var(--paper-raised); border-color: var(--ink); }
+  .ov-chip.active .n{ color: var(--paper-raised); }
+  .ov-scroll{ max-height: 420px; overflow: auto; border: 1px solid var(--rule); border-radius: 3px; background: #fff; }
+  .ov-table{ width:100%; border-collapse: collapse; font-size: 12.5px; }
+  .ov-table thead th{ position: sticky; top: 0; background: var(--paper-raised); text-align:left; font-family:'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 500; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-soft); padding: 7px 8px; border-bottom: 1px solid var(--rule); z-index: 1; }
+  .ov-table td{ padding: 6px 8px; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+  .ov-table .num{ text-align:right; font-variant-numeric: tabular-nums; }
+  .ov-table .code{ font-family:'IBM Plex Mono', monospace; font-size: 11.5px; }
+  .ov-row{ cursor:pointer; }
+  .ov-row:hover td{ background: var(--accent-bg); }
+  .ov-file{ max-width: 190px; overflow:hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-soft); }
+  .ov-muted{ color: var(--ink-soft); font-style: italic; }
+  .ov-empty{ color: var(--ink-soft); text-align:center; padding: 14px !important; }
+  .ov-status{ display:inline-block; font-family:'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 3px; white-space: nowrap; }
+  .ov-status.ok{ color: var(--green); background: var(--green-bg); }
+  .ov-status.bad{ color: var(--red); background: var(--red-bg); }
+  .ov-status.pending{ color: #8a6a1e; background: var(--amber-bg); }
+  .ov-status.muted{ color: var(--ink-soft); background: var(--rule-soft); }
+  .ov-tag{ display:inline-block; font-size: 10.5px; padding: 0 6px; border-radius: 3px; margin-left: 4px; white-space: nowrap; }
+  .ov-tag.warn{ color: #8a6a1e; border: 1px solid var(--amber); }
+  .to-overview{ display:none; position: fixed; right: 18px; bottom: 18px; z-index: 20; font-family:'IBM Plex Mono', monospace; font-size: 12px; color: var(--paper-raised); background: var(--ink); border: 0; border-radius: 18px; padding: 8px 14px; cursor:pointer; box-shadow: 0 2px 8px rgba(0,0,0,.18); }
+  .to-overview.show{ display:block; }
+  .invoice-card, .error-box, .dn-box{ scroll-margin-top: 12px; }
+  @keyframes flashCard{ 0%{ box-shadow: 0 0 0 3px var(--gold); } 100%{ box-shadow: 0 0 0 0 transparent; } }
+  .flash{ animation: flashCard 1.6s ease-out; }
+  .seq-tag{ font-family:'IBM Plex Mono', monospace; font-weight: 600; color: var(--gold); }
+  .file-tag{ font-family:'IBM Plex Mono', monospace; font-size: 11px; color: var(--ink-soft); }
+  .code-tag{ display:inline-block; font-family:'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: .03em; color: var(--ink-soft); border: 1px solid var(--rule-strong); border-radius: 3px; padding: 0 5px; margin-top: 2px; font-weight: 500; }
+  .skipped-error{ display:flex; gap: 14px; align-items:flex-start; justify-content:space-between; padding: 10px 14px; margin-bottom: 10px; font-size: 13px; }
+  .skipped-error .skipped-btns{ display:flex; gap: 6px; flex-shrink: 0; }
+  .skipped-error button{ margin-top: 0; }
+  .skipped-hint{ display:block; margin-top: 3px; font-size: 12px; color: var(--ink-soft); }
+  #skippedArea .dn-box{ margin-bottom: 10px; }
+  .ov-table td.code{ white-space: nowrap; }
+
+  /* ---- v6.2: read self-check on the bill card ---- */
+  .read-check{ border: 1px solid var(--amber); background: var(--amber-bg); border-radius: 4px; padding: 10px 14px; margin: 10px 0 4px; font-size: 13px; }
+  .read-check-head{ font-weight: 600; margin-bottom: 4px; color: #6f5418; }
+  .read-check-line{ color: var(--ink); margin: 2px 0; }
+  .read-check button{ margin-top: 8px; font-family:'IBM Plex Mono', monospace; font-size: 11.5px; background:#fff; border: 1px solid var(--amber); border-radius: 3px; padding: 5px 10px; cursor:pointer; }
+  .read-check.acked{ border-color: var(--rule); background: transparent; color: var(--ink-soft); font-size: 12px; padding: 6px 12px; }
+
+  /* ---- v6.2: parser report extras ---- */
+  .pr-summary{ font-family:'IBM Plex Mono', monospace; font-size: 12px; margin: 6px 0; }
+  .pr-codes{ font-size: 12px; color: var(--ink-soft); margin: 4px 0 10px; }
+  .pr-actions{ display:flex; flex-wrap: wrap; gap: 6px; align-items:center; margin-bottom: 10px; }
+  .pr-warn{ margin: 4px 0 0; padding-left: 16px; color: var(--ink); }
+  .pr-help{ margin-top: 4px; font-size: 11.5px; font-style: italic; }
+
+  /* ---- v6.2: fold verified bills (same as screenshot mode's clean-bill folding) ---- */
+  body.collapse-verified .invoice-card.clean-bill .items-table,
+  body.collapse-verified .invoice-card.clean-bill .match-box,
+  body.collapse-verified .invoice-card.clean-bill .total-check-row,
+  body.collapse-verified .invoice-card.clean-bill [data-read-check],
+  body.collapse-verified .invoice-card.clean-bill .card-actions{ display:none; }
+  body.collapse-verified .invoice-card.clean-bill{ padding-bottom: 20px; }
+
+  /* ---- v7: app bar (branch switch, Google Sheet sync, install) ---- */
+  .app-bar{ display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; margin-bottom:22px; }
+  .branch-switch{ display:inline-flex; border:1px solid var(--rule-strong); border-radius:4px; overflow:hidden; background:var(--paper-raised); }
+  .branch-switch button{ font-family:'IBM Plex Mono', monospace; font-size:12.5px; border:none; background:transparent; color:var(--ink-soft); padding:8px 14px; cursor:pointer; }
+  .branch-switch button + button{ border-left:1px solid var(--rule-strong); }
+  .branch-switch button.active{ background:var(--gold); color:#fff; font-weight:600; cursor:default; }
+  .sync-box{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+  .sync-status{ font-family:'IBM Plex Mono', monospace; font-size:11.5px; color:var(--ink-soft); padding:6px 10px; border:1px solid var(--rule); border-radius:4px; background:var(--paper-raised); }
+  .sync-status.ok{ color:var(--green); border-color:var(--green); background:var(--green-bg); }
+  .sync-status.warn{ color:var(--amber); border-color:var(--amber); background:var(--amber-bg); }
+  .sync-status.bad{ color:var(--red); border-color:var(--red); background:var(--red-bg); }
+  .sync-status.busy::before{ content:''; display:inline-block; width:9px; height:9px; margin-right:6px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:spin .8s linear infinite; vertical-align:-1px; }
+  .bar-btn{ font-family:'IBM Plex Mono', monospace; font-size:11.5px; color:var(--ink); background:var(--paper-raised); border:1px solid var(--rule-strong); border-radius:4px; padding:6px 10px; cursor:pointer; }
+  .bar-btn:hover{ border-color:var(--gold); }
+  .bar-btn.primary{ background:var(--ink); color:var(--paper-raised); border-color:var(--ink); }
+  .bar-btn[hidden]{ display:none; }
+  .sync-form{ display:grid; grid-template-columns: 150px 1fr; gap:10px 12px; align-items:center; max-width:640px; font-size:13px; }
+  .sync-form input{ font-family:'IBM Plex Mono', monospace; font-size:12.5px; border:1px solid var(--rule-strong); border-radius:3px; padding:7px 9px; background:#fff; width:100%; }
+  .sync-form .actions{ grid-column: 2; display:flex; gap:8px; flex-wrap:wrap; }
+  .sync-msg{ margin-top:12px; font-family:'IBM Plex Mono', monospace; font-size:12px; }
+  .sync-msg.bad{ color:var(--red); } .sync-msg.ok{ color:var(--green); }
+  .master-tabs{ display:flex; gap:8px; margin:6px 0 10px; flex-wrap:wrap; }
+  .master-note{ font-size:12px; color:var(--ink-soft); margin:6px 0 0; line-height:1.5; }
+  .src-tag{ display:inline-block; font-family:'IBM Plex Mono', monospace; font-size:10.5px; padding:1px 6px; border-radius:3px; background:var(--accent-bg); color:var(--gold); border:1px solid var(--gold); margin-left:6px; vertical-align:1px; }
+  .restored-note{ font-family:'IBM Plex Mono', monospace; font-size:12px; color:var(--ink-soft); background:var(--paper-raised); border:1px dashed var(--rule-strong); border-radius:4px; padding:8px 12px; margin-bottom:16px; }
+  .brand-logo .lg-accent{ stroke: var(--gold); }
+  .brand-logo .lg-accent-f{ fill: var(--gold); }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <p class="eyebrow">JAIN WIRE · INVOICE AUDIT</p>
-  <h1><span style="display:inline-block;width:44px;height:44px;vertical-align:-7px;margin-right:14px;"><svg style="width:100%;height:100%;display:block" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#1E2A38"/><g stroke="#1D6CA6" stroke-opacity=".6" stroke-width="2"><path d="M8 20H56M8 32H56M8 44H56M20 8V56M32 8V56M44 8V56"/></g><rect x="17" y="10" width="26" height="36" rx="3" fill="#FAF7EF"/><path d="M22 18H38M22 24H38M22 30H32" stroke="#1E2A38" stroke-opacity=".45" stroke-width="2.5" stroke-linecap="round"/><circle cx="43" cy="44" r="12" fill="#1D6CA6" stroke="#1E2A38" stroke-width="3"/><path d="M37.5 44.5l4 4 7.5-8" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Pick your branch</h1>
-  <p class="lede">Both checkers work the same way. They differ only in how each branch bills: drop the day's rate sheet or loading plan, then all the bill PDFs.</p>
-  <div class="grid">
-    <a class="branch" href="ernakulam/" style="--c:var(--gold)">
-      <div class="code">EKM · v6.3</div>
-      <div class="name">Ernakulam</div>
-      <div class="what">Rate sheet grouped by customer. Sheet and roll rates are worked out from height × length.</div>
-    </a>
-    <a class="branch" href="calicut/" style="--c:var(--accent)">
-      <div class="code">CLT · KNR · v3.0</div>
-      <div class="name">Calicut · Kannur</div>
-      <div class="what">Loading plan in pieces, converted to sq.ft from the item size. Takes Calicut and Kannur bills.</div>
-    </a>
+  <div class="app-bar">
+    <div class="branch-switch" role="group" aria-label="Branch">
+      <button type="button" data-branch-btn="ekm">Ernakulam</button><button type="button" data-branch-btn="clt">Calicut · Kannur</button>
+    </div>
+    <div class="sync-box">
+      <span class="sync-status" id="syncStatus">☁ Google Sheet not connected</span>
+      <button type="button" class="bar-btn" id="syncNowBtn" hidden>⟳ Sync now</button>
+      <button type="button" class="bar-btn" id="syncSettingsBtn">☁ Sync settings</button>
+      <button type="button" class="bar-btn primary" id="installBtn" hidden>⬇ Install app</button>
+    </div>
   </div>
-  <footer>Everything runs inside your browser. Bills and rate sheets are never uploaded.<br>Settings and logs are saved per browser, per computer.</footer>
+  <div class="panel" id="syncPanel"></div>
+
+  <header>
+    <p class="eyebrow" id="eyebrowText"></p>
+    <h1><span class="brand-logo"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#1E2A38"/><g class="lg-accent" stroke-opacity=".6" stroke-width="2"><path d="M8 20H56M8 32H56M8 44H56M20 8V56M32 8V56M44 8V56"/></g><rect x="17" y="10" width="26" height="36" rx="3" fill="#FAF7EF"/><path d="M22 18H38M22 24H38M22 30H32" stroke="#1E2A38" stroke-opacity=".45" stroke-width="2.5" stroke-linecap="round"/><circle class="lg-accent-f" cx="43" cy="44" r="12" stroke="#1E2A38" stroke-width="3"/><path d="M37.5 44.5l4 4 7.5-8" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Invoice Audit <span class="version-badge" id="versionBadge"></span></h1>
+    <p id="ledeText"></p>
+  </header>
+
+  <div class="toggles">
+    <button class="toggle-btn" id="masterToggle">📦 Items &amp; parties (Google Sheet)</button>
+    <button class="toggle-btn" id="rulesToggle"></button>
+    <button class="toggle-btn" id="codesToggle"></button>
+    <button class="toggle-btn" id="logToggle">📋 Discrepancy log</button>
+    <button class="toggle-btn" id="parserReportToggle">🔍 Parser report (how each bill was read)</button>
+    <button class="toggle-btn" id="screenshotToggle">📸 Screenshot mode</button>
+  </div>
+  <div class="panel" id="masterPanel"></div>
+  <div class="panel" id="rulesPanel"></div>
+  <div class="panel" id="codesPanel"></div>
+  <div class="panel" id="logPanel"></div>
+  <div class="panel" id="parserReportPanel"></div>
+
+  <div id="restoredNote"></div>
+  <div class="zones">
+    <div class="dropzone" id="excelZone">
+      <div class="icon">📊</div>
+      <div class="main" id="excelMainText"></div>
+      <div class="sub" id="excelSubText"></div>
+      <input type="file" id="excelInput" accept=".xlsx,.xls">
+    </div>
+    <div class="dropzone" id="dropzone">
+      <div class="icon">🧾</div>
+      <div class="main">Drop bill PDFs here, or click to choose</div>
+      <div class="sub">Drop a whole day's bills at once — 50+ is fine</div>
+      <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple>
+    </div>
+  </div>
+
+  <div class="excel-status" id="excelStatus"></div>
+  <div class="tally-bar" id="tallyBar"></div>
+
+  <div id="processing"></div>
+  <div class="overview" id="overview"></div>
+  <div class="export-bar" id="exportBar" style="display:none;">
+    <button id="exportBtn">⬇ Export flagged lines (CSV)</button>
+  </div>
+  <div id="skippedArea"></div>
+  <div id="results"></div>
+  <button class="to-overview" id="toOverviewBtn" title="Back to the bill overview">↑ Overview</button>
+
+  <footer>
+    Bills are read inside this app, straight from the PDF text · bills are never uploaded and no AI is called.<br>
+    Only the item and party lists, rules and the audit log go to your Google Sheet. Bills and the rate sheet stay on this computer until you press "Clear all".<br>
+    <span id="footerNote"></span><br>
+    <span id="footerVersion"></span>
+  </footer>
 </div>
+
+<script>
+// Load this branch's formulas, then the shared app — in that order (async=false keeps the order).
+['branch-' + window.IA_BRANCH + '.js', 'app.js'].forEach(function(src){
+  var el = document.createElement('script'); el.src = src; el.async = false; document.body.appendChild(el);
+});
+</script>
 </body>
 </html>
