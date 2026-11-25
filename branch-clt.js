@@ -506,9 +506,7 @@ function computeRow(row){
   const rateMismatch = expectedRate !== null && Math.abs(row.rate - expectedRate) > (cat.tolRate || 0) + 1e-9;
   let rateWarning = null;
   if(rateMismatch){
-    const diff = row.rate - expectedRate;
-    const pct = expectedRate !== 0 ? Math.abs(diff / expectedRate * 100) : 0;
-    rateWarning = `Billed ₹${fmt(row.rate)} vs expected ₹${fmt(expectedRate)} — ${diff > 0 ? 'over' : 'short'} by ₹${fmt(Math.abs(diff))} (${pct.toFixed(1)}%)`;
+    rateWarning = gstRateWarning(row, expectedRate, cat.taxPct || 0);
   }
 
   let qtyMismatch = false, qtyWarning = null;

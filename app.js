@@ -4,7 +4,7 @@
 // per browser/machine so an "updated" notice can be shown after an update (see
 // loadPersisted()). This is purely a tracking label — it has no effect on parsing
 // or matching logic.
-const APP_VERSION = 'v7.0';
+const APP_VERSION = 'v8.0';
 // The branch's formulas (branch-ekm.js or branch-clt.js) are loaded just before this file.
 
 // Web build: Claude's window.storage doesn't exist on GitHub Pages, so this shim stores the same
@@ -49,6 +49,7 @@ screenshotToggle.addEventListener('click', () => {
 
 function renderTally(){
   scheduleOverview();
+  if(typeof updateSlabStatus === 'function') updateSlabStatus();
   scheduleSessionSave();
   if(!excelWorkbookData || !excelWorkbookData.blocks.length){
     tallyBar.classList.remove('show');
@@ -295,16 +296,9 @@ function gatherBillDiscrepancies(record){
   }
 
   record.items.forEach(row => {
-    const result = computeRow(row);
-    if(!result.flagged) return;
-    const lineIssues = [];
-    if(result.rateMismatch) lineIssues.push(result.rateWarning);
-    if(result.qtyMismatch) lineIssues.push(result.qtyWarning);
-    if(result.bundleWarning) lineIssues.push(result.bundleWarning);
-    if(result.itemMismatch) lineIssues.push(result.itemMismatchWarning);
-    if(result.notDispatched) lineIssues.push(result.notDispatchedWarning);
-    (result.otherIssues || []).forEach(x => lineIssues.push(x));
-    issues.push(`${row.description}: ${lineIssues.join('; ')}`);
+    const lc = lineCheck(row, record);
+    if(!lc.flagged) return;
+    issues.push(`${row.description}: ${lc.issues.join('; ')}`);
   });
 
   return issues;
@@ -332,18 +326,35 @@ function ceilTo(value, decimals){
 function normalize(s){
   return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
-// One panel open at a time.
-function openOnly(panel){
-  const wasOpen = panel.classList.contains('open');
+// v8: the ☰ sidebar picks one view at a time — "Check bills" or one of the masters / panels.
+var currentView = 'bills';
+const VIEW_PANELS = { items: 'masterPanel', parties: 'masterPanel', slab: 'masterPanel', rules: 'rulesPanel', codes: 'codesPanel', log: 'logPanel', parser: 'parserReportPanel', sync: 'syncPanel' };
+function setView(v){
+  if(!VIEW_PANELS[v]) v = 'bills';
+  currentView = v;
+  document.body.dataset.view = v;
   [masterPanel, rulesPanel, codesPanel, logPanel, parserReportPanel, syncPanel].forEach(p => p.classList.remove('open'));
-  if(!wasOpen) panel.classList.add('open');
-  return !wasOpen;
+  if(v !== 'bills'){
+    document.getElementById(VIEW_PANELS[v]).classList.add('open');
+    if(v === 'items' || v === 'parties' || v === 'slab'){ masterTab = v; renderMasterPanel(); }
+    else if(v === 'log') renderLogPanel();
+    else if(v === 'parser') renderParserReportPanel();
+    else if(v === 'sync') renderSyncPanel();
+  }
+  document.querySelectorAll('.nav-btn[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === v));
+  window.scrollTo(0, 0);
 }
-rulesToggle.addEventListener('click', () => openOnly(rulesPanel));
-codesToggle.addEventListener('click', () => openOnly(codesPanel));
-logToggle.addEventListener('click', () => { if(openOnly(logPanel)) renderLogPanel(); });
-parserReportToggle.addEventListener('click', () => { if(openOnly(parserReportPanel)) renderParserReportPanel(); });
-masterToggle.addEventListener('click', () => { if(openOnly(masterPanel)) renderMasterPanel(); });
+// Older code opens a panel with openOnly(panel): routed to the matching view.
+function openOnly(panel){
+  const v = Object.keys(VIEW_PANELS).find(k => VIEW_PANELS[k] === panel.id && (panel !== masterPanel || k === masterTab)) || 'bills';
+  setView(v);
+  return true;
+}
+document.querySelectorAll('.nav-btn[data-view]').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
+document.getElementById('sideToggle').addEventListener('click', () => {
+  const c = document.documentElement.classList.toggle('side-collapsed');
+  try{ localStorage.setItem('ia.side', c ? 'collapsed' : 'open'); }catch(e){}
+});
 
 // ===================== PERSISTENCE =====================
 async function savePersisted(){
@@ -685,6 +696,11 @@ function resetItemsToUnmatched(record){
 
 function refreshMatchBox(record, card){
   const box = card.querySelector('.match-box');
+  if(record.local){
+    box.className = 'match-box confirmed';
+    box.innerHTML = `<span class="local-tag">🏪 Local sale</span> <span class="no-excel-note" style="margin-left:8px;">No loading list — each line is checked against the rate slab only.</span>`;
+    return;
+  }
   if(!excelWorkbookData){
     box.className = 'match-box';
     box.innerHTML = `<span class="no-excel-note">No rate Excel loaded yet — drop it above to auto-fill quoted rates for this bill. Until then, enter rates manually below.</span>`;
@@ -1061,7 +1077,7 @@ function sanityCheckInvoice(data){
 function renderCard(record, container, prepend){
   const { parsed } = record;
   const card = document.createElement('div');
-  card.className = 'card invoice-card';
+  card.className = 'card invoice-card' + (record.local ? ' local' : '');
   card.dataset.recordId = record.id;
 
   const sumBilledRaw = record.items.reduce((s, it) => s + (Number(it.amount) || 0), 0);
@@ -1096,15 +1112,16 @@ function renderCard(record, container, prepend){
       <thead>
         <tr>
           <th>Description</th>
-          <th class="num">Actual Qty</th>
+          <th class="num plan-col">Actual Qty</th>
           <th class="num">Billed Qty</th>
           <th>Unit</th>
           <th class="num">Billed Rate</th>
-          <th class="num">Expected Rate</th>
-          <th>Category</th>
-          <th class="num">Height ft</th>
-          <th class="num">Length ft</th>
-          <th class="num">Quoted Rate</th>
+          <th class="num" title="Billed rate incl GST, and the rate slab (minimum – maximum, incl GST)">Slab (incl GST)</th>
+          <th class="num plan-col">Expected Rate</th>
+          <th class="plan-col">Category</th>
+          <th class="num plan-col">Height ft</th>
+          <th class="num plan-col">Length ft</th>
+          <th class="num plan-col">Quoted Rate</th>
           <th class="num">Billed Amount</th>
           <th class="num">✓</th>
         </tr>
@@ -1116,6 +1133,7 @@ function renderCard(record, container, prepend){
     <div data-missing-items></div>
     <div data-line-count-note></div>
     <div class="card-actions">
+      <button data-action="wa" class="wa-btn" title="Copies a picture of this bill's check — paste it into WhatsApp with Ctrl+V">📱 Copy for WhatsApp</button>
       <button data-action="log">📋 Add to log</button>
       <button data-action="remove">✕ Remove this bill</button>
     </div>
@@ -1130,6 +1148,7 @@ function renderCard(record, container, prepend){
     setTimeout(() => { btn.textContent = original; }, 1200);
   });
 
+  card.querySelector('[data-action="wa"]').addEventListener('click', e => copyBillImage(record, e.currentTarget));
   card.querySelector('[data-action="remove"]').addEventListener('click', () => {
     window.__records = window.__records.filter(r => r.id !== record.id);
     card.remove();
@@ -1144,17 +1163,18 @@ function renderCard(record, container, prepend){
     tr.dataset.idx = idx;
     tr.innerHTML = `
       <td class="desc">${escapeHtml(row.description)}${row.masterName ? `<span class="src-tag" title="Found in the item list: ${escapeHtml(row.masterName)}">item list ✓</span>` : ''}<div data-preview></div></td>
-      <td class="num"><input class="cell-input" data-field="orderedQty" value="${row.orderedQty !== null ? row.orderedQty : ''}" style="width:64px;"><div class="qty-calc" data-qty-calc></div></td>
+      <td class="num plan-col"><input class="cell-input" data-field="orderedQty" value="${row.orderedQty !== null ? row.orderedQty : ''}" style="width:64px;"><div class="qty-calc" data-qty-calc></div></td>
       <td class="num">${row.quantity}</td>
       <td>${escapeHtml(row.unit || '')}</td>
       <td class="num">${fmt(row.rate)}</td>
-      <td class="num" data-field="expectedRate">—</td>
-      <td><select class="cell-select" data-field="category">
+      <td class="num slab-cell" data-field="slab">—</td>
+      <td class="num plan-col" data-field="expectedRate">—</td>
+      <td class="plan-col"><select class="cell-select" data-field="category">
             ${Object.keys(rules).map(k => `<option value="${k}" ${row.category===k?'selected':''}>${rules[k].label}</option>`).join('')}
           </select></td>
-      <td class="num"><input class="cell-input" data-field="heightFt" value="${row.heightFt !== null ? row.heightFt : ''}" style="width:52px;"></td>
-      <td class="num"><input class="cell-input" data-field="customLengthFt" value="${row.customLengthFt !== null ? row.customLengthFt : ''}" placeholder="${(rules[row.category] || rules.direct).lengthFt || ''}" title="Leave blank to use the category default (12ft sheets, 50ft rolls). Fill in only for a non-standard length, e.g. a 100ft roll." style="width:60px;"></td>
-      <td class="num"><div class="rate-cell"><input class="cell-input" data-field="quotedRate" value="${row.quotedRate !== null ? row.quotedRate : ''}" placeholder="rate" style="width:68px;"><button type="button" class="fill-btn" data-action="fill" title="Copy this rate to every other row in the same category">↧all</button></div></td>
+      <td class="num plan-col"><input class="cell-input" data-field="heightFt" value="${row.heightFt !== null ? row.heightFt : ''}" style="width:52px;"></td>
+      <td class="num plan-col"><input class="cell-input" data-field="customLengthFt" value="${row.customLengthFt !== null ? row.customLengthFt : ''}" placeholder="${(rules[row.category] || rules.direct).lengthFt || ''}" title="Leave blank to use the category default (12ft sheets, 50ft rolls). Fill in only for a non-standard length, e.g. a 100ft roll." style="width:60px;"></td>
+      <td class="num plan-col"><div class="rate-cell"><input class="cell-input" data-field="quotedRate" value="${row.quotedRate !== null ? row.quotedRate : ''}" placeholder="rate" style="width:68px;"><button type="button" class="fill-btn" data-action="fill" title="Copy this rate to every other row in the same category">↧all</button></div></td>
       <td class="num">${fmt(row.amount)}</td>
       <td class="num status" data-field="status">—</td>
     `;
@@ -1256,11 +1276,12 @@ function renderDiscrepancySummary(card, record){
   const holder = card.querySelector('[data-discrepancy-summary]');
   if(!holder) return;
   const issues = gatherBillDiscrepancies(record);
-  if(!issues.length){ holder.innerHTML = ''; return; }
-  holder.innerHTML = `<div class="discrepancy-summary">
-    <div class="discrepancy-summary-head">⚠ ${issues.length} discrepanc${issues.length === 1 ? 'y' : 'ies'} on this bill</div>
+  const gaps = gatherSlabGaps(record);
+  const loss = record.items.reduce((t, row) => { const sl = lineCheck(row, record).slab; return t + (sl && sl.status === 'below' ? sl.total : 0); }, 0);
+  holder.innerHTML = (issues.length ? `<div class="discrepancy-summary">
+    <div class="discrepancy-summary-head">⚠ ${issues.length} discrepanc${issues.length === 1 ? 'y' : 'ies'} on this bill${loss > 0 ? `<span class="loss-chip">Loss vs slab ₹${fmt(loss)}</span>` : ''}</div>
     ${issues.map(i => `<div class="discrepancy-summary-line">• ${escapeHtml(i)}</div>`).join('')}
-  </div>`;
+  </div>` : '') + (gaps.length ? `<div class="slab-gaps">${gaps.map(g => `<div>❓ ${escapeHtml(g)}</div>`).join('')}</div>` : '');
 }
 
 function recalcCard(card){
@@ -1271,9 +1292,12 @@ function recalcCard(card){
   let sumBilled = 0, sumExpected = 0, allComputed = true;
   let discrepancyCount = record.partyMismatch ? 1 : 0;
 
+  let slabGaps = 0, slabLoss = 0;
   record.items.forEach((row, idx) => {
     const tr = tbody.querySelector(`tr[data-idx="${idx}"]`);
-    const result = computeRow(row);
+    const lc = lineCheck(row, record);
+    const result = lc.result;
+    const sl = lc.slab;
     sumBilled += row.amount;
     if(result.expectedRate !== null) sumExpected += result.expectedRate * row.quantity;
     else allComputed = false;
@@ -1285,17 +1309,33 @@ function recalcCard(card){
     const currentOrdered = row.orderedQty === null ? '' : String(row.orderedQty);
     if(document.activeElement !== orderedInput && orderedInput.value !== currentOrdered) orderedInput.value = currentOrdered;
 
-    tr.classList.toggle('flag', result.flagged);
-    tr.classList.toggle('pending', result.pending && !result.qtyMismatch);
+    tr.classList.toggle('flag', lc.flagged);
+    tr.classList.toggle('pending', result.pending && !result.qtyMismatch && !lc.flagged);
     tr.querySelector('[data-field="expectedRate"]').textContent = result.expectedRate !== null ? fmt(result.expectedRate) : '—';
     const statusCell = tr.querySelector('[data-field="status"]');
-    const showPending = result.pending && !result.qtyMismatch;
-    statusCell.className = 'num status ' + (showPending ? 'pending' : (result.flagged ? 'bad' : 'ok'));
-    statusCell.textContent = showPending ? '…' : (result.flagged ? '✗' : '✓');
+    const showPending = result.pending && !result.qtyMismatch && !lc.flagged;
+    const gap = lc.slabGap && !lc.flagged && !showPending;
+    statusCell.className = 'num status ' + (showPending ? 'pending' : lc.flagged ? 'bad' : gap ? 'pending' : 'ok');
+    statusCell.textContent = showPending ? '…' : lc.flagged ? '✗' : gap ? '❓' : '✓';
+    statusCell.title = gap ? 'No rate slab to check this line against' : '';
+    renderSlabCell(tr, sl);
+    if(lc.slabGap) slabGaps++;
+    if(sl && sl.status === 'below') slabLoss += sl.total;
 
     const calcEl = tr.querySelector('[data-qty-calc]');
     if(calcEl) calcEl.textContent = result.qtyCalc || '';
-    tr.querySelectorAll('.other-note, .info-note').forEach(n => n.remove());
+    tr.querySelectorAll('.other-note, .info-note, .slab-note, .slab-gap-note').forEach(n => n.remove());
+    if(sl && (sl.status === 'below' || sl.status === 'above')){
+      const n = document.createElement('div'); n.className = 'slab-note' + (sl.status === 'above' ? ' above' : ''); n.textContent = (sl.status === 'below' ? '▼ ' : '▲ ') + sl.message;
+      tr.querySelector('.desc').appendChild(n);
+    }else if(sl && sl.gap){
+      const n = document.createElement('div'); n.className = 'slab-gap-note'; n.textContent = '❓ ' + sl.message;
+      tr.querySelector('.desc').appendChild(n);
+    }
+    if(sl && sl.planNote){
+      const n = document.createElement('div'); n.className = 'slab-note'; n.textContent = '▼ ' + sl.planNote;
+      tr.querySelector('.desc').appendChild(n);
+    }
     (result.infoNotes || []).forEach(x => {
       const n = document.createElement('div'); n.className = 'info-note'; n.textContent = 'ⓘ ' + x;
       tr.querySelector('.desc').appendChild(n);
@@ -1335,9 +1375,8 @@ function recalcCard(card){
       notDispatchedNoteEl.textContent = '⚠ ' + result.notDispatchedWarning;
     }else if(notDispatchedNoteEl){ notDispatchedNoteEl.remove(); }
 
-    if(result.flagged) anyFlag = true;
-    if(result.flagged) discrepancyCount++;
-    if(result.pending && !result.qtyMismatch) anyPending = true;
+    if(lc.flagged){ anyFlag = true; discrepancyCount++; }
+    if(result.pending && !result.qtyMismatch && !lc.flagged) anyPending = true;
   });
 
   const missingItems = renderMissingItems(card, record);
@@ -1357,10 +1396,14 @@ function recalcCard(card){
   // 2-decimal rate), so the totals get the same allowance summed — ₹1 at least.
   const totalTol = Math.max(1, record.items.reduce((t, r) => t + Math.abs(Number(r.quantity) || 0) * 0.005, 0));
   const tfoot = card.querySelector('[data-tfoot]');
+  const span = record.local ? 5 : 11;
+  record.slabLoss = Math.round(slabLoss * 100) / 100;
+  record.slabGaps = slabGaps;
   tfoot.innerHTML = `
-    <tr><td colspan="9">Billed total (line items)</td><td class="num">${fmt(sumBilled)}</td><td></td></tr>
-    ${allComputed ? `<tr>
-      <td colspan="9">Expected total</td>
+    <tr><td colspan="${span}">Billed total (line items)</td><td class="num">${fmt(sumBilled)}</td><td></td></tr>
+    ${record.slabLoss > 0 ? `<tr><td colspan="${span}" style="color:var(--red);">Loss against the rate slab (incl GST)</td><td class="num" style="color:var(--red);font-weight:600;">${fmt(record.slabLoss)}</td><td class="num status bad">✗</td></tr>` : ''}
+    ${allComputed && !record.local ? `<tr>
+      <td colspan="${span}">Expected total</td>
       <td class="num">${fmt(sumExpected)}</td>
       <td class="num status ${Math.abs(sumBilled-sumExpected) > totalTol ? 'bad' : 'ok'}">${Math.abs(sumBilled-sumExpected) > totalTol ? '✗' : '✓'}</td>
     </tr>` : ''}
@@ -1368,16 +1411,17 @@ function recalcCard(card){
 
   const stamp = card.querySelector('[data-stamp]');
   stamp.classList.remove('ok','bad','pending');
-  const nameCheckPending = !!excelWorkbookData && !record.selectedBlockName;
+  const nameCheckPending = !record.local && !!excelWorkbookData && !record.selectedBlockName;
   // A missing e-Way Bill or a subtotal mismatch is a discrepancy in its own right: it's already in
   // the count and the summary banner, so the stamp must not say "Verified" while it stands.
   if(record.subtotalOk === false || record.ewayPresent === false || (record.billIssues || []).length) anyFlag = true;
   const readCheckOpen = (record.readWarnings || []).length > 0 && !record.readWarningsAck;
   let statusKind;
-  if(nameCheckPending){ stamp.classList.add('pending'); stamp.textContent = 'Pick customer'; statusKind = 'name'; }
+  if(nameCheckPending && !anyFlag){ stamp.classList.add('pending'); stamp.textContent = 'Pick customer'; statusKind = 'name'; }
   else if(anyPending){ stamp.classList.add('pending'); stamp.textContent = 'Awaiting rates'; statusKind = 'rates'; }
   else if(anyFlag){ stamp.classList.add('bad'); stamp.textContent = `Discrepancy (${discrepancyCount}) ⚠`; statusKind = 'discrepancy'; }
   else if(readCheckOpen){ stamp.classList.add('pending'); stamp.textContent = 'Check the read ⚠'; statusKind = 'readcheck'; }
+  else if(slabGaps && SLAB_SET.missingBlocks){ stamp.classList.add('pending'); stamp.textContent = `Slab missing (${slabGaps}) ❓`; statusKind = 'slab'; }
   else{ stamp.classList.add('ok'); stamp.textContent = 'Verified ✓'; statusKind = 'verified'; }
 
   const isClean = statusKind === 'verified';
@@ -1412,15 +1456,9 @@ exportBtn.addEventListener('click', () => {
       });
     }
     record.items.forEach(row => {
-      const result = computeRow(row);
-      if(!result.flagged) return;
-      const issues = [];
-      if(result.rateMismatch) issues.push(result.rateWarning);
-      if(result.qtyMismatch) issues.push(result.qtyWarning);
-      if(result.bundleWarning) issues.push(result.bundleWarning);
-      if(result.itemMismatch) issues.push(result.itemMismatchWarning);
-      if(result.notDispatched) issues.push(result.notDispatchedWarning);
-      (result.otherIssues || []).forEach(x => issues.push(x));
+      const lc = lineCheck(row, record), result = lc.result;
+      if(!lc.flagged) return;
+      const issues = lc.issues;
       rows.push([record.filename, record.parsed.invoiceNumber || '', row.description, rules[row.category]?.label || row.category, row.quantity, row.orderedQty, row.unit, row.rate, result.expectedRate ?? '', row.amount, issues.join('; ')]);
     });
   });
@@ -1459,6 +1497,22 @@ fileInput.addEventListener('change', e => {
   const files = Array.from(e.target.files);
   if(files.length) handleFiles(files);
   fileInput.value = '';
+});
+// v8: local sales — no loading list; every line is checked against the rate slab only.
+const localZone = document.getElementById('localZone');
+const localInput = document.getElementById('localInput');
+localZone.addEventListener('click', () => localInput.click());
+localZone.addEventListener('dragover', e => { e.preventDefault(); localZone.classList.add('drag'); });
+localZone.addEventListener('dragleave', () => localZone.classList.remove('drag'));
+localZone.addEventListener('drop', e => {
+  e.preventDefault(); localZone.classList.remove('drag');
+  const files = Array.from(e.dataTransfer.files).filter(f => !isExcelFile(f));
+  if(files.length) handleFiles(files, { local: true });
+});
+localInput.addEventListener('change', e => {
+  const files = Array.from(e.target.files);
+  if(files.length) handleFiles(files, { local: true });
+  localInput.value = '';
 });
 
 function isPdfFile(f){ return /\.pdf$/i.test(f.name) || f.type === 'application/pdf'; }
@@ -1542,7 +1596,7 @@ function sellerEntityLabel(parsed){
   return g && BRANCH.gstins[g] ? BRANCH.gstins[g] : null;
 }
 
-function buildRecord(file, outcome, seq, key){
+function buildRecord(file, outcome, seq, key, local){
   const parsed = outcome.parsed;
   if(parsed.invoiceDate) parsed.invoiceDate = toDDMMYYYY(parsed.invoiceDate);
   const items = (parsed.items || []).map(it => ({
@@ -1565,7 +1619,7 @@ function buildRecord(file, outcome, seq, key){
   items.forEach(applyMasterToRow); // v7: the Google Sheet item list knows this item → its category / size
   return {
     id: 'r' + Date.now() + Math.random().toString(36).slice(2, 7),
-    seq, fileKey: key, filename: file.name, parsed, items,
+    seq, fileKey: key, filename: file.name, parsed, items, local: !!local,
     billIssues: sellerGstinIssues(parsed),
     selectedBlockName: null, partyMismatch: false, itemMismatches: {}, _autoGuessTried: false,
     extractionPath: 'deterministic',
@@ -1576,9 +1630,9 @@ function buildRecord(file, outcome, seq, key){
 // Batches are queued: dropping a second set of bills while the first is still being read simply
 // waits its turn, instead of two batches interleaving and fighting over the progress bar.
 let batchChain = Promise.resolve();
-function handleFiles(files){
+function handleFiles(files, opts){
   const list = Array.from(files);
-  batchChain = batchChain.then(() => processBatch(list)).catch(e => {
+  batchChain = batchChain.then(() => processBatch(list, opts || {})).catch(e => {
     console.error('[batch] unexpected error', e);
     processingEl.innerHTML = `<div class="error-box"><strong>Something went wrong while reading this batch</strong>${escapeHtml((e && e.message) || String(e))}</div>`;
     batchInProgress = false;
@@ -1603,7 +1657,8 @@ function batchCountsText(c){
   return parts.join(' · ');
 }
 
-async function processBatch(files){
+async function processBatch(files, opts){
+  opts = opts || {};
   // A rate sheet dropped on the bills box by mistake is loaded as the rate sheet, not rejected.
   const excelFiles = files.filter(isExcelFile);
   if(excelFiles.length) loadExcelFile(excelFiles[excelFiles.length - 1]);
@@ -1652,7 +1707,7 @@ async function processBatch(files){
     }
 
     if(outcome.kind === 'bill'){
-      const record = buildRecord(file, outcome, seq, key);
+      const record = buildRecord(file, outcome, seq, key, !!opts.local);
       window.__records.push(record);
       newRecords.push(record);
       counts.read++;
@@ -1754,6 +1809,7 @@ const STATUS_META = {
   name:        { label: 'Customer not picked', cls: 'pending' },
   rates:       { label: 'Awaiting rates',      cls: 'pending' },
   readcheck:   { label: 'Check the read',      cls: 'pending' },
+  slab:        { label: 'Slab missing ❓',      cls: 'pending' },
   failed:      { label: 'Not read',            cls: 'bad' },
   dn:          { label: 'Delivery note',       cls: 'muted' },
   duplicate:   { label: 'Duplicate — skipped', cls: 'muted' },
@@ -1768,7 +1824,7 @@ function overviewRows(){
       seq: r.seq, kind, isRecord: true, ref: r,
       file: r.filename,
       party: r.parsed.partyName || '—',
-      customer: r.selectedBlockName || '',
+      customer: r.local ? '🏪 Local sale' : (r.selectedBlockName || ''),
       sharedCustomer: r.selectedBlockName && blockCounts[r.selectedBlockName] > 1
         ? window.__records.filter(o => o !== r && o.selectedBlockName === r.selectedBlockName).map(o => '#' + o.seq) : null,
       invoice: r.parsed.invoiceNumber || '—',
@@ -1792,7 +1848,7 @@ function needsAttention(row){
 const OVERVIEW_FILTERS = [
   ['attention',   'Needs attention', needsAttention],
   ['discrepancy', 'Discrepancies',   r => r.kind === 'discrepancy'],
-  ['pending',     'Pending check',   r => r.kind === 'name' || r.kind === 'rates' || r.kind === 'readcheck'],
+  ['pending',     'Pending check',   r => r.kind === 'name' || r.kind === 'rates' || r.kind === 'readcheck' || r.kind === 'slab'],
   ['verified',    'Verified',        r => r.kind === 'verified'],
   ['skipped',     'Not read / skipped', r => r.kind === 'failed' || r.kind === 'dn' || r.kind === 'duplicate'],
   ['all',         'All',             () => true],
@@ -1849,6 +1905,7 @@ function renderOverview(){
       <div class="ov-actions">
         <button id="ovNext" ${attention ? '' : 'disabled'} title="Shortcut: press N">Next needing attention →</button>
         <button id="ovExport">⬇ Day summary (CSV)</button>
+        <button id="ovWa" class="wa-btn" title="A picture of the whole day's results — paste it into WhatsApp">📱 Day summary for WhatsApp</button>
         <button id="ovSendLog" title="Write every bill's current result to the Audit Log tab of the Google Sheet">📤 Send all to Audit Log</button>
         <label class="ov-collapse"><input type="checkbox" id="ovCollapse" ${document.body.classList.contains('collapse-verified') ? 'checked' : ''}> Fold verified bills</label>
         <button id="ovClear" class="ov-danger" title="Removes every bill and the rate sheet / loading plan">Clear all</button>
@@ -1866,6 +1923,7 @@ function renderOverview(){
   overviewEl.querySelectorAll('tr[data-seq]').forEach(tr => tr.addEventListener('click', () => jumpToSeq(parseInt(tr.dataset.seq, 10))));
   overviewEl.querySelector('#ovNext').addEventListener('click', jumpToNextAttention);
   overviewEl.querySelector('#ovExport').addEventListener('click', exportDaySummary);
+  overviewEl.querySelector('#ovWa').addEventListener('click', e => copyCanvasToClipboard(drawDayImage, e.currentTarget, 'day-summary-' + fmtDate(new Date()) + '.png'));
   overviewEl.querySelector('#ovSendLog').addEventListener('click', e => {
     const n = sendBillsToSheetLog(window.__records.slice());
     e.target.textContent = n ? `✓ ${n} queued for the sheet` : 'Nothing to send';
@@ -2176,7 +2234,7 @@ async function api(action, payload, cfg){
   let j;
   try{ j = await res.json(); }
   catch(e){ throw new Error('The Web app URL did not answer like the Invoice Audit script — check that it is the /exec URL and that access is "Anyone".'); }
-  if(!j.ok) throw new Error(j.error || 'The sheet refused the request.');
+  if(!j.ok){ const err = new Error(j.error || 'The sheet refused the request.'); err.code = j.code || null; throw err; }
   return j;
 }
 
@@ -2187,7 +2245,7 @@ function noteRulesMaybeChanged(){
   const now = rulesJsonNow();
   if(!now || now === lastRulesJson) return;
   lastRulesJson = now;
-  if(syncCfg()) queueOutbox({ type: 'rules', branch: BRANCH.key, rules: JSON.parse(now) });
+  if(syncCfg() && isAdmin()) queueOutbox({ type: 'rules', branch: BRANCH.key, rules: JSON.parse(now) });
 }
 function queueOutbox(item){
   if(item.type === 'rules') outbox = outbox.filter(o => !(o.type === 'rules' && o.branch === item.branch));
@@ -2204,8 +2262,17 @@ async function flushOutbox(){
   try{
     while(outbox.length){
       const item = outbox[0];
-      if(item.type === 'rules') await api('saveRules', { branch: item.branch, rules: item.rules });
-      else if(item.type === 'log') await api('log', { entries: item.entries });
+      try{
+        if(item.type === 'rules') await api('saveRules', { branch: item.branch, rules: item.rules });
+        else if(item.type === 'log') await api('log', { entries: item.entries });
+        else if(item.type === 'rows') await api('saveRows', { tab: item.tab, rows: item.rows });
+        else if(item.type === 'delete') await api('deleteRows', { tab: item.tab, matches: item.matches });
+        else if(item.type === 'learn') await api('learn', { branch: item.branch, parties: item.parties, items: item.items });
+      }catch(err){
+        // An admin-only change made by a checker can never succeed: drop it, say so, carry on.
+        if(err.code !== 'ROLE') throw err;
+        syncState.roleNote = err.message;
+      }
       outbox.shift();
       await idbSet('outbox', outbox);
     }
@@ -2213,6 +2280,7 @@ async function flushOutbox(){
   }catch(e){
     ok = false;
     syncState.lastError = e.message;
+    if(e.code === 'AUTH') lockApp('Your password was changed or your user was switched off in the sheet — log in again.');
   }finally{
     flushing = false;
     updateSyncStatus();
@@ -2228,16 +2296,43 @@ function sendBillsToSheetLog(records){
     invoiceNo: r.parsed.invoiceNumber || '',
     invoiceDate: r.parsed.invoiceDate || '',
     party: r.parsed.partyName || '',
-    customer: r.selectedBlockName || '',
+    customer: r.local ? '' : (r.selectedBlockName || ''),
     file: r.filename,
     status: r.statusKind === 'discrepancy' ? `Discrepancy (${r.currentDiscrepancyCount || 0})` : (STATUS_META[r.statusKind] || STATUS_META.name).label,
     count: r.currentDiscrepancyCount || 0,
-    details: gatherBillDiscrepancies(r),
+    details: gatherBillDiscrepancies(r).concat(gatherSlabGaps(r).map(g => '❓ ' + g)),
+    slabLoss: r.slabLoss || 0,
+    type: r.local ? 'Local sale' : 'Loading list',
     version: APP_VERSION
   }));
   if(!entries.length) return 0;
   queueOutbox({ type: 'log', entries });
+  queueLearning(records);
   return entries.length;
+}
+// Learning: what a checked bill confirms is added to the Party and Item masters, so the next bill
+// matches straight away. Only from correct matches: a bill whose party is marked as mismatched
+// teaches no party, and a line teaches its code only when its loading-list check passed.
+function queueLearning(records){
+  const parties = [], items = [], seenP = new Set(), seenI = new Set();
+  records.forEach(r => {
+    if(!r || r.local || !r.parsed) return;
+    if(r.selectedBlockName && !r.partyMismatch && r.parsed.partyName){
+      const k = normalize(r.parsed.partyName) + '|' + normalize(r.selectedBlockName);
+      const known = MASTER.parties.some(p => normalize(p.name) === normalize(r.parsed.partyName) && [p.name, ...splitList(p.aliases)].some(a => normalize(a) === normalize(r.selectedBlockName)));
+      if(!known && !seenP.has(k)){ seenP.add(k); parties.push({ name: r.parsed.partyName, alias: r.selectedBlockName }); }
+    }
+    r.items.forEach(row => {
+      if(!row.excelCode || row.itemNameMismatch || row.notDispatchedButBilled) return;
+      const res = computeRow(row);
+      if(res.flagged || res.pending || res.expectedRate === null) return;
+      if(masterCodeRelation(row.description, row.excelCode) === 'same') return;
+      const k = nameKey(row.description) + '|' + codeKey(row.excelCode);
+      if(seenI.has(k)) return;
+      seenI.add(k); items.push({ name: row.description, code: row.excelCode });
+    });
+  });
+  if(parties.length || items.length) queueOutbox({ type: 'learn', branch: BRANCH.key, parties, items });
 }
 
 // Once each time the app opens (and on ⟳ Sync now): send anything waiting, then fetch everything.
@@ -2248,7 +2343,7 @@ async function fullSync(){
   try{
     await flushOutbox();
     const data = await api('pull');
-    MASTER_ALL = { at: data.at, user: data.user, displayName: data.displayName, branches: data.branches || {} };
+    MASTER_ALL = { at: data.at, user: data.user, displayName: data.displayName, role: data.role || 'admin', branches: data.branches || {}, slab: data.slab || [], slabSettings: data.slabSettings || null };
     await idbSet('master', MASTER_ALL);
     const saved = syncSaved();
     if(data.displayName && saved.displayName !== data.displayName){ saved.displayName = data.displayName; localStorage.setItem(SYNC_KEY, JSON.stringify(saved)); }
@@ -2256,15 +2351,21 @@ async function fullSync(){
     if(outbox.length) await flushOutbox();
   }catch(e){
     syncState.lastError = e.message;
+    // Password changed or user switched off in the sheet: this PC is locked until a new login.
+    if(e.code === 'AUTH') lockApp('Your password was changed or your user was switched off in the sheet — log in again.');
   }finally{
     syncState.busy = false;
     updateSyncStatus();
-    if(masterPanel.classList.contains('open')) renderMasterPanel();
+    if(masterPanel.classList.contains('open') && !masterEdit) renderMasterPanel();
   }
 }
+function isAdmin(){ return !MASTER_ALL || MASTER_ALL.role !== 'checker'; }
 function applyMasterAll(fromSheet){
   const b = MASTER_ALL && MASTER_ALL.branches ? MASTER_ALL.branches[BRANCH.key] : null;
   setMaster(b);
+  setSlab(MASTER_ALL ? MASTER_ALL.slab : [], MASTER_ALL ? MASTER_ALL.slabSettings : null);
+  updateSlabStatus();
+  if(fromSheet) recalcAllCards();
   // Rules from the sheet win — unless this browser changed them and hasn't sent them yet.
   const pendingRules = outbox.some(o => o.type === 'rules' && o.branch === BRANCH.key);
   if(b && b.rules && !pendingRules){
@@ -2337,8 +2438,7 @@ function renderSyncPanel(msg, kind){
     if(!hash){ msgEl.className = 'sync-msg bad'; msgEl.textContent = 'Type your password.'; return; }
     msgEl.className = 'sync-msg'; msgEl.textContent = 'Checking…';
     try{
-      const r = await api('login', {}, { url, user, hash });
-      localStorage.setItem(SYNC_KEY, JSON.stringify({ url, user, hash, displayName: r.displayName || user }));
+      const r = await loginWith(url, user, hash);
       renderSyncPanel(`✓ Logged in as ${r.displayName || user}. Syncing…`, 'ok');
       await fullSync();
       renderSyncPanel(syncState.lastError ? '⚠ ' + syncState.lastError : `✓ Logged in as ${r.displayName || user} and synced.`, syncState.lastError ? 'bad' : 'ok');
@@ -2347,82 +2447,374 @@ function renderSyncPanel(msg, kind){
     }
   });
   const lo = document.getElementById('syncLogoutBtn');
-  if(lo) lo.addEventListener('click', () => {
-    localStorage.setItem(SYNC_KEY, JSON.stringify({ url: saved.url || '' }));
-    syncState.lastError = null;
-    updateSyncStatus();
-    renderSyncPanel('Logged out. The last synced copy stays in use on this computer.', 'ok');
+  if(lo) lo.addEventListener('click', () => logOut());
+}
+
+// ---- Login screen: nothing in the app is shown until a user from the sheet's Users tab logs in ----
+// The login is checked by the sheet itself (needs internet the first time); after that this PC
+// stays logged in — also offline — until "Log out", or until the sheet refuses the saved login
+// (password changed / user switched off), which locks it again at the next sync.
+async function loginWith(url, user, hash){
+  const r = await api('login', {}, { url, user, hash });
+  localStorage.setItem(SYNC_KEY, JSON.stringify({ url, user, hash, displayName: r.displayName || user }));
+  return r;
+}
+function lockApp(message){
+  const saved = syncSaved();
+  localStorage.setItem(SYNC_KEY, JSON.stringify({ url: saved.url || '', user: saved.user || '' }));
+  saveSessionNow();
+  [masterPanel, rulesPanel, codesPanel, logPanel, parserReportPanel, syncPanel].forEach(p => p.classList.remove('open'));
+  document.documentElement.classList.add('locked');
+  renderLockScreen(message || '', message ? 'bad' : '');
+}
+function logOut(){
+  if(!confirm('Log out of Invoice Audit on this PC?\n\nThe next person has to log in. Open bills and the rate sheet stay.')) return;
+  syncState.lastError = null;
+  lockApp('');
+  renderLockScreen('Logged out.', 'ok');
+}
+function renderLockScreen(msg, kind){
+  const saved = syncSaved();
+  const urlBox = document.getElementById('lockUrlBox'), urlNote = document.getElementById('lockUrlNote');
+  const hasUrl = !!saved.url;
+  urlBox.hidden = hasUrl; urlNote.hidden = !hasUrl;
+  document.getElementById('lockUrl').value = saved.url || '';
+  if(saved.user && !document.getElementById('lockUser').value) document.getElementById('lockUser').value = saved.user;
+  document.getElementById('lockPass').value = '';
+  document.getElementById('lockVersion').textContent = APP_VERSION;
+  const m = document.getElementById('lockMsg');
+  m.className = 'lock-msg ' + (kind || ''); m.textContent = msg || '';
+  setTimeout(() => document.getElementById(hasUrl && saved.user ? 'lockPass' : hasUrl ? 'lockUser' : 'lockUrl').focus(), 30);
+}
+function initLockScreen(){
+  document.getElementById('lockUrlChange').addEventListener('click', () => {
+    document.getElementById('lockUrlBox').hidden = false; document.getElementById('lockUrlNote').hidden = true;
+    document.getElementById('lockUrl').focus();
   });
+  document.getElementById('logoutBtn').addEventListener('click', logOut);
+  document.getElementById('lockForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const m = document.getElementById('lockMsg'), btn = document.getElementById('lockBtn');
+    const url = document.getElementById('lockUrl').value.trim();
+    const user = document.getElementById('lockUser').value.trim();
+    const pass = document.getElementById('lockPass').value.trim();
+    const bad = t => { m.className = 'lock-msg bad'; m.textContent = t; };
+    if(!/^https:\/\/script\.google(usercontent)?\.com\//.test(url)) return bad('Paste the Web app URL from the sheet\'s Apps Script (it ends in /exec).');
+    if(!user) return bad('Type your user name.');
+    if(!pass) return bad('Type your password.');
+    btn.disabled = true; m.className = 'lock-msg'; m.textContent = 'Checking…';
+    try{
+      await loginWith(url, user, await sha256Hex(pass));
+      document.documentElement.classList.remove('locked');
+      document.getElementById('lockPass').value = '';
+      m.textContent = '';
+      updateSyncStatus();
+      fullSync();
+    }catch(err){
+      bad(err.code === 'AUTH' ? 'Wrong user name or password, or this user is switched off.' : err.message);
+    }finally{ btn.disabled = false; }
+  });
+  if(!syncCfg()){ document.documentElement.classList.add('locked'); renderLockScreen(); }
 }
 
 // ---- Items & parties panel ---------------------------------------------------------------------
 var masterTab = 'items';
+// ---- v8: Item / Party / Rate slab masters, edited right here and saved to the Google Sheet ------
+function numOrNull(v){ const t = String(v == null ? '' : v).replace(/[₹,\s]/g, ''); if(t === '') return null; const n = parseFloat(t); return isFinite(n) ? n : NaN; }
+const MASTER_DEFS = {
+  items: {
+    label: 'Item master', sheet: () => (BRANCH.key === 'clt' ? 'CLT' : 'EKM') + ' Items', tab: () => BRANCH.key + 'Items',
+    list: () => MASTER_ALL.branches[BRANCH.key].items,
+    desc: () => `This branch's Tally stock items. A bill line whose Tally name (or an old name under "Other codes / spellings") is here is paired with the ${BRANCH.key === 'ekm' ? 'rate-sheet' : 'loading-plan'} row carrying one of its codes, and takes its category, size${BRANCH.key === 'ekm' ? ', bundle weight' : ''} and GST % from here. Lines confirmed on checked bills are added automatically (Source = learned).`,
+    fields: [
+      { k: 'code', h: 'Code', w: 140 }, { k: 'name', h: 'Tally stock item name', req: true },
+      { k: 'category', h: 'Category', w: 100 }, { k: 'unit', h: 'Unit', w: 64 },
+      { k: 'ht', h: 'Ht ft', w: 52, num: true }, { k: 'len', h: 'Len ft', w: 52, num: true },
+      { k: 'bundleKg', h: 'Bundle kg', w: 64, num: true }, { k: 'gst', h: 'GST %', w: 52, num: true },
+      { k: 'other', h: 'Other codes / spellings', wide: true }, { k: 'source', h: 'Source', w: 120, ro: true }],
+    key: r => ({ 'Tally stock item name': r.name }),
+    same: (a, b) => normalize(a.name) === normalize(b.name),
+  },
+  parties: {
+    label: 'Party master', sheet: () => (BRANCH.key === 'clt' ? 'CLT' : 'EKM') + ' Parties', tab: () => BRANCH.key + 'Parties',
+    list: () => MASTER_ALL.branches[BRANCH.key].parties,
+    desc: () => `Each Tally party name with the name(s) used on the ${BRANCH.key === 'ekm' ? 'rate sheet' : 'loading plan'} (separate several with commas). A bill whose party is here is paired with that customer straight away. Parties confirmed on checked bills are added automatically (Source = learned).`,
+    fields: [
+      { k: 'name', h: 'Tally party name', req: true },
+      { k: 'aliases', h: () => BRANCH.key === 'clt' ? 'Names on the loading plan / other spellings' : 'Names on the rate sheet / other spellings', label: 'Names on the plan / other spellings', wide: true },
+      { k: 'place', h: 'Place', w: 120 }, { k: 'source', h: 'Source', w: 120, ro: true }],
+    key: r => ({ 'Tally party name': r.name }),
+    same: (a, b) => normalize(a.name) === normalize(b.name),
+  },
+  slab: {
+    label: 'Rate slab', sheet: () => 'Rate Slab', tab: () => 'slab',
+    list: () => MASTER_ALL.slab,
+    desc: () => `ONE safety slab for every branch, rates INCLUDING GST. Every bill line — loading-list and local sales — is checked against it: below the minimum is flagged as a loss, above the maximum as billed too high. The maximum is the minimum + the item's Max % (blank = the default below). To change a rate and keep the history, use "＋ New rate": old bills keep being checked against the rate valid on their date.`,
+    fields: [
+      { k: 'item', h: 'Tally item name', req: true }, { k: 'unit', h: 'Unit', w: 64, req: true },
+      { k: 'gst', h: 'GST %', w: 52, num: true }, { k: 'min', h: 'Minimum rate (incl GST)', label: 'Minimum ₹ (incl GST)', w: 90, num: true, req: true },
+      { k: 'maxPct', h: 'Max %', w: 56, num: true, placeholder: () => String(SLAB_SET.maxPct) },
+      { k: 'max', h: 'Maximum rate (incl GST)', label: 'Maximum ₹', w: 84, ro: true, calc: r => (isFinite(r.min) && r.min !== null) ? fmt(slabMaxOf(r)) : '' },
+      { k: 'from', h: 'Effective from', label: 'From (DD-MM-YYYY)', w: 92, placeholder: () => 'always' },
+      { k: 'other', h: 'Other names / spellings', wide: true },
+      { k: 'by', h: 'Updated by', w: 110, ro: true, calc: r => [r.by, r.at].filter(Boolean).join(' · ') }],
+    key: r => ({ 'Tally item name': r.item, 'Unit': r.unit, 'Effective from': r.from }),
+    same: (a, b) => normalize(a.item) === normalize(b.item) && unitKey(a.unit) === unitKey(b.unit) && (a.from || '') === (b.from || ''),
+  },
+};
+var masterSearch = '', masterEdit = null;   // masterEdit: { row (original or null), draft }
+function hdr(f){ return typeof f.h === 'function' ? f.h() : f.h; }
+
 function renderMasterPanel(){
-  const cfg = syncCfg();
-  const B = BRANCH.key.toUpperCase();
-  const builtIn = branchBuiltInItems();
-  const when = MASTER_ALL ? `Copy from the sheet: ${escapeHtml(MASTER_ALL.at)}` : 'Not synced with the sheet yet';
-  let html = `<h3>Items &amp; parties — ${escapeHtml(BRANCH.name)}</h3>
-    <p class="desc">Kept in the <b>${B} Items</b> and <b>${B} Parties</b> tabs of the Google Sheet — edit them there, then press ⟳ Sync now.
-    A bill line whose Tally item name is on the list is paired with the ${BRANCH.key === 'ekm' ? 'rate-sheet' : 'loading-plan'} row carrying one of that item's codes, with no guessing from sizes, and takes its category, height, length${BRANCH.key === 'ekm' ? ' and bundle weight' : ''} from the list.
-    A bill party on the party list is paired with the ${BRANCH.key === 'ekm' ? 'rate-sheet' : 'plan'} customer named on its row.
-    <b>After a mass rename in Tally</b>, paste the new names into "Tally stock item name" and keep the old names in "Other codes / spellings" — both are recognised.</p>
-    <div class="row pr-actions">
-      <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink-soft);">${when} · ${MASTER.items.length} items · ${MASTER.parties.length} parties</span>
-      <span style="flex:1"></span>
-      ${cfg ? '<button type="button" class="bar-btn" id="mpSync">⟳ Sync now</button>' : '<button type="button" class="bar-btn" id="mpConnect">☁ Connect the Google Sheet</button>'}
-      <button type="button" class="bar-btn" id="mpRematch" title="Match every open bill again using the current lists">↻ Re-match open bills</button>
-    </div>`;
-  if(cfg && MASTER_ALL && !MASTER.items.length && builtIn.length){
-    html += `<p class="master-note">The ${B} Items tab is empty. <span class="fill-btn" id="mpSeed" style="cursor:pointer;">Fill it with the built-in list (${builtIn.length} items)</span> — you can then correct and extend it in the sheet.</p>`;
+  const def = MASTER_DEFS[masterTab];
+  if(!def){ masterPanel.innerHTML = ''; return; }
+  if(!MASTER_ALL || !MASTER_ALL.branches || !MASTER_ALL.branches[BRANCH.key]){
+    masterPanel.innerHTML = `<h3>${def.label}</h3><p class="desc">Not synced with the Google Sheet yet — press ⟳ Sync now at the top.</p>`;
+    return;
   }
-  if(!MASTER.items.length){
-    html += `<p class="master-note">${BRANCH.key === 'ekm' ? 'No item list from the sheet yet — the built-in code list is used meanwhile.' : 'No item list from the sheet yet — items are recognised from the plan shorthand (aperture and size) meanwhile.'}</p>`;
-  }
-  html += `<div class="master-tabs">
-      <button class="ov-chip ${masterTab === 'items' ? 'active' : ''}" data-mtab="items">Items <span class="n">${MASTER.items.length}</span></button>
-      <button class="ov-chip ${masterTab === 'parties' ? 'active' : ''}" data-mtab="parties">Parties <span class="n">${MASTER.parties.length}</span></button>
+  if(masterTab === 'slab' && !Array.isArray(MASTER_ALL.slab)) MASTER_ALL.slab = [];
+  const admin = isAdmin();
+  const list = def.list();
+  const branchTxt = masterTab === 'slab' ? 'all branches' : (BRANCH.key === 'clt' ? 'Calicut · Kannur' : 'Ernakulam');
+  let html = `<h3>${def.label} <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink-soft);font-weight:400;">· ${branchTxt} · "${escapeHtml(def.sheet())}" tab · ${list.length} row${list.length === 1 ? '' : 's'}</span></h3>
+    <p class="desc">${def.desc()}</p>`;
+  if(masterTab === 'slab') html += slabSettingsHtml(admin) + slabChecksHtml();
+  html += `<div class="row pr-actions" style="gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+      <input type="text" id="mSearch" placeholder="Search…" value="${escapeHtml(masterSearch)}" style="flex:1;min-width:200px;font-family:'IBM Plex Mono',monospace;font-size:12.5px;border:1px solid var(--rule-strong);border-radius:3px;padding:7px 9px;">
+      ${admin ? `<button type="button" class="bar-btn primary" id="mAdd">＋ Add</button><button type="button" class="bar-btn" id="mPaste">📋 Paste from Excel</button>` : ''}
+      <button type="button" class="bar-btn" id="mExport">⬇ Export (CSV)</button>
+      ${masterTab === 'items' && admin && !list.length && branchBuiltInItems().length ? `<button type="button" class="bar-btn" id="mSeed">Fill with the built-in list (${branchBuiltInItems().length})</button>` : ''}
+      ${masterTab !== 'slab' ? `<button type="button" class="bar-btn" id="mRematch" title="Match every open bill again using the current lists">↻ Re-match open bills</button>` : ''}
     </div>
-    <div class="code-search-row"><input type="text" id="masterSearch" placeholder="Search…"></div>
-    <div class="code-scroll" style="max-height:340px;"><table class="code-table" id="masterTable"></table></div>`;
+    ${admin ? '' : `<p class="master-note">You are logged in as a checker — only an admin can change this list.</p>`}
+    ${syncState.roleNote ? `<p class="master-note" style="color:var(--red);">⚠ ${escapeHtml(syncState.roleNote)}</p>` : ''}
+    <div id="mForm"></div>
+    <div class="code-scroll" style="max-height:62vh;"><table class="code-table" id="mTable"></table></div>`;
   masterPanel.innerHTML = html;
 
-  masterPanel.querySelectorAll('[data-mtab]').forEach(b => b.addEventListener('click', () => { masterTab = b.dataset.mtab; renderMasterPanel(); }));
-  const search = document.getElementById('masterSearch');
-  search.addEventListener('input', () => renderMasterRows(search.value));
-  renderMasterRows('');
-  const s = document.getElementById('mpSync'); if(s) s.addEventListener('click', () => fullSync());
-  const c = document.getElementById('mpConnect'); if(c) c.addEventListener('click', () => { openOnly(syncPanel); renderSyncPanel(); });
-  document.getElementById('mpRematch').addEventListener('click', rematchOpenBills);
-  const seed = document.getElementById('mpSeed');
-  if(seed) seed.addEventListener('click', async () => {
-    if(!confirm(`Write the built-in list (${builtIn.length} items) into the empty ${B} Items tab of the Google Sheet?`)) return;
-    seed.textContent = 'Writing…';
-    try{ const r = await api('seedItems', { branch: BRANCH.key, items: builtIn }); if(!r.ok) throw new Error(r.error); await fullSync(); }
-    catch(e){ seed.textContent = '⚠ ' + e.message; }
+  const search = document.getElementById('mSearch');
+  search.addEventListener('input', () => { masterSearch = search.value; renderMasterTable(); });
+  const on = (id, fn) => { const el = document.getElementById(id); if(el) el.addEventListener('click', fn); };
+  on('mAdd', () => openMasterForm(null));
+  on('mPaste', openPasteBox);
+  on('mExport', exportMaster);
+  on('mRematch', rematchOpenBills);
+  on('mSeed', async e => {
+    const builtIn = branchBuiltInItems();
+    if(!confirm(`Write the built-in list (${builtIn.length} items) into the empty ${def.sheet()} tab?`)) return;
+    e.target.textContent = 'Writing…';
+    try{ await api('seedItems', { branch: BRANCH.key, items: builtIn }); await fullSync(); renderMasterPanel(); }
+    catch(err){ e.target.textContent = '⚠ ' + err.message; }
+  });
+  if(masterTab === 'slab') wireSlabSettings();
+  renderMasterTable();
+  if(masterEdit) renderMasterForm();
+}
+function renderMasterTable(){
+  const def = MASTER_DEFS[masterTab], table = document.getElementById('mTable');
+  if(!table) return;
+  const admin = isAdmin();
+  const q = masterSearch.trim().toLowerCase();
+  const all = def.list().map((r, i) => ({ r, i }));
+  const list = all.filter(({ r }) => !q || def.fields.some(f => String(r[f.k] ?? '').toLowerCase().includes(q)));
+  if(masterTab === 'slab') list.sort((a, b) => normalize(a.r.item).localeCompare(normalize(b.r.item)) || (dateNum(a.r.from) || 0) - (dateNum(b.r.from) || 0));
+  const LIMIT = 500;
+  const shown = list.slice(0, LIMIT);
+  const cell = (f, r) => {
+    const v = f.calc ? f.calc(r) : r[f.k];
+    const txt = v === null || v === undefined ? '' : (f.num && isFinite(v) ? String(v) : String(v));
+    return `<td${f.wide ? ' style="white-space:normal;word-break:break-word;"' : ''}${f.k === 'code' ? ' class="code"' : ''}>${escapeHtml(txt)}${f.k === 'maxPct' && txt === '' ? `<span style="color:var(--ink-soft);">${SLAB_SET.maxPct}</span>` : ''}</td>`;
+  };
+  table.innerHTML = `<thead><tr>${def.fields.map(f => `<th${f.w ? ` style="width:${f.w}px"` : ''}>${escapeHtml(f.label || hdr(f))}</th>`).join('')}${admin ? '<th style="width:118px;"></th>' : ''}</tr></thead>
+    <tbody>${shown.map(({ r, i }) => `<tr data-i="${i}">${def.fields.map(f => cell(f, r)).join('')}${admin ? `<td style="white-space:nowrap;">
+        <button type="button" class="fill-btn" data-act="edit" title="Edit">✎</button>
+        ${masterTab === 'slab' ? '<button type="button" class="fill-btn" data-act="newrate" title="New rate from today — keeps this one for older bills">＋ New rate</button>' : ''}
+        <button type="button" class="fill-btn" data-act="del" title="Delete">🗑</button></td>` : ''}</tr>`).join('')
+      || `<tr><td colspan="${def.fields.length + 1}" style="color:var(--ink-soft);">${all.length ? 'Nothing matches.' : 'Nothing here yet.'}</td></tr>`}
+    ${list.length > LIMIT ? `<tr><td colspan="${def.fields.length + 1}" style="color:var(--ink-soft);">… ${list.length - LIMIT} more — type to search.</td></tr>` : ''}</tbody>`;
+  table.querySelectorAll('tr[data-i]').forEach(tr => {
+    const row = def.list()[+tr.dataset.i];
+    tr.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => {
+      if(b.dataset.act === 'edit') openMasterForm(row);
+      else if(b.dataset.act === 'del') deleteMasterRow(row);
+      else if(b.dataset.act === 'newrate') openMasterForm(null, Object.assign({}, row, { from: fmtDate(new Date()), min: null, by: '', at: '' }));
+    }));
   });
 }
-function renderMasterRows(q){
-  const table = document.getElementById('masterTable');
-  if(!table) return;
-  q = (q || '').trim().toLowerCase();
-  const LIMIT = 400;
-  if(masterTab === 'items'){
-    const list = MASTER.items.filter(it => !q || [it.code, it.name, it.other, it.category].join(' ').toLowerCase().includes(q));
-    table.innerHTML = `<colgroup><col style="width:200px;"><col><col style="width:90px;"><col style="width:50px;"><col style="width:50px;"><col style="width:60px;"></colgroup>
-      <thead><tr><th>Code</th><th>Tally stock item name · other codes / spellings</th><th>Category</th><th>Ht</th><th>Len</th><th>Bundle</th></tr></thead><tbody>${
-      list.slice(0, LIMIT).map(it => `<tr><td class="code" style="white-space:normal;word-break:break-word;">${escapeHtml(it.code)}</td><td>${escapeHtml(it.name)}${it.other ? `<div style="color:var(--ink-soft);font-size:11px;">${escapeHtml(it.other)}</div>` : ''}</td><td>${escapeHtml(it.category || '')}</td><td>${it.ht ?? ''}</td><td>${it.len ?? ''}</td><td>${it.bundleKg ?? ''}</td></tr>`).join('')
-      || `<tr><td colspan="6" style="color:var(--ink-soft);">${MASTER.items.length ? 'Nothing matches.' : 'No items yet.'}</td></tr>`}
-      ${list.length > LIMIT ? `<tr><td colspan="6" style="color:var(--ink-soft);">… ${list.length - LIMIT} more — type to search.</td></tr>` : ''}</tbody>`;
-  }else{
-    const list = MASTER.parties.filter(p => !q || [p.name, p.aliases, p.place].join(' ').toLowerCase().includes(q));
-    table.innerHTML = `<colgroup><col style="width:38%;"><col><col style="width:120px;"></colgroup>
-      <thead><tr><th>Tally party name</th><th>Names on the ${BRANCH.key === 'ekm' ? 'rate sheet' : 'loading plan'} / other spellings</th><th>Place</th></tr></thead><tbody>${
-      list.slice(0, LIMIT).map(p => `<tr><td>${escapeHtml(p.name)}</td><td>${escapeHtml(p.aliases)}</td><td>${escapeHtml(p.place || '')}</td></tr>`).join('')
-      || `<tr><td colspan="3" style="color:var(--ink-soft);">${MASTER.parties.length ? 'Nothing matches.' : 'No parties yet.'}</td></tr>`}
-      ${list.length > LIMIT ? `<tr><td colspan="3" style="color:var(--ink-soft);">… ${list.length - LIMIT} more — type to search.</td></tr>` : ''}</tbody>`;
-  }
+function openMasterForm(row, prefill){
+  masterEdit = { row, draft: Object.assign({}, row || prefill || {}) };
+  renderMasterForm();
+  const f = document.getElementById('mForm'); if(f) f.scrollIntoView({ block: 'nearest' });
 }
+function renderMasterForm(){
+  const def = MASTER_DEFS[masterTab], box = document.getElementById('mForm');
+  if(!box || !masterEdit) return;
+  const d = masterEdit.draft;
+  box.innerHTML = `<div class="sync-form" style="max-width:none;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));display:grid;gap:10px 14px;background:var(--paper-raised);border:1px solid var(--gold);border-radius:4px;padding:14px;margin-bottom:12px;">
+    ${def.fields.filter(f => !f.ro).map(f => `<label style="display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:var(--ink-soft);${f.wide || f.req && !f.w ? 'grid-column:span 2;' : ''}">${escapeHtml(f.label || hdr(f))}${f.req ? ' *' : ''}
+      <input data-k="${f.k}" value="${escapeHtml(d[f.k] === null || d[f.k] === undefined ? '' : String(d[f.k]))}" placeholder="${f.placeholder ? escapeHtml(f.placeholder()) : ''}"></label>`).join('')}
+    <div style="grid-column:1/-1;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <button type="button" class="bar-btn primary" id="mSave">${masterEdit.row ? 'Save changes' : 'Add'}</button>
+      <button type="button" class="bar-btn" id="mCancel">Cancel</button>
+      <span id="mMsg" class="sync-msg" style="margin:0;"></span>
+    </div></div>`;
+  box.querySelector('#mCancel').addEventListener('click', () => { masterEdit = null; box.innerHTML = ''; });
+  box.querySelector('#mSave').addEventListener('click', () => {
+    const draft = {};
+    box.querySelectorAll('input[data-k]').forEach(i => { draft[i.dataset.k] = i.value.trim(); });
+    const err = saveMasterRow(masterEdit.row, draft);
+    const m = box.querySelector('#mMsg');
+    if(err){ m.className = 'sync-msg bad'; m.textContent = '⚠ ' + err; return; }
+    masterEdit = null;
+    renderMasterPanel();
+  });
+  const first = box.querySelector('input[data-k]'); if(first && !masterEdit.row) first.focus();
+}
+// Checks and stores one row. Returns an error text, or null when saved.
+function cleanMasterRow(draft){
+  const def = MASTER_DEFS[masterTab], out = {};
+  for(const f of def.fields){
+    if(f.ro) continue;
+    let v = draft[f.k] === undefined ? '' : String(draft[f.k]).trim();
+    if(f.req && !v) return { err: `"${f.label || hdr(f)}" is required.` };
+    if(f.num){
+      const n = numOrNull(v);
+      if(Number.isNaN(n)) return { err: `"${f.label || hdr(f)}" must be a number (got "${v}").` };
+      out[f.k] = n;
+    }else out[f.k] = v;
+  }
+  if(masterTab === 'slab'){
+    if(!(out.min > 0)) return { err: 'The minimum rate must be more than 0.' };
+    if(out.maxPct !== null && out.maxPct < 0) return { err: 'Max % cannot be negative.' };
+    if(out.from && dateNum(out.from) === null) return { err: 'Effective from must be a date like 01-12-2026, or blank for "always".' };
+    if(out.from){ const m = /^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})$/.exec(out.from); out.from = pad2(+m[1]) + '-' + pad2(+m[2]) + '-' + m[3]; }
+  }
+  return { row: out };
+}
+function toSheetValues(row){
+  const def = MASTER_DEFS[masterTab], v = {};
+  def.fields.forEach(f => { if(!f.ro) v[hdr(f)] = row[f.k] === null || row[f.k] === undefined ? '' : row[f.k]; });
+  if(masterTab === 'slab') v['Maximum rate (incl GST)'] = slabMaxOf(row);
+  return v;
+}
+function saveMasterRow(original, draft){
+  const def = MASTER_DEFS[masterTab];
+  const c = cleanMasterRow(draft);
+  if(c.err) return c.err;
+  const row = c.row, list = def.list();
+  const clash = list.find(r => r !== original && def.same(r, row));
+  if(clash) return masterTab === 'slab' ? 'This item already has a rate with the same unit and start date — edit that one, or give a different "From" date.' : 'That name is already in the list — edit that row instead.';
+  const matchKey = original ? def.key(original) : null;   // the sheet row is found by its key BEFORE this edit
+  if(original){ Object.assign(original, row); if(masterTab === 'slab'){ original.by = MASTER_ALL.displayName || ''; original.at = fmtDateTime(new Date()); } }
+  else list.push(Object.assign(row, masterTab === 'slab' ? { by: MASTER_ALL.displayName || '', at: fmtDateTime(new Date()) } : {}));
+  queueOutbox({ type: 'rows', tab: def.tab(), rows: [{ match: matchKey, values: toSheetValues(original || row) }] });
+  afterMasterChange();
+  return null;
+}
+function deleteMasterRow(row){
+  const def = MASTER_DEFS[masterTab];
+  const name = row.name || row.item;
+  if(!confirm(`Delete "${name}"${masterTab === 'slab' ? ` (${row.unit}${row.from ? ', from ' + row.from : ''})` : ''} from the ${def.label}?`)) return;
+  const list = def.list();
+  list.splice(list.indexOf(row), 1);
+  queueOutbox({ type: 'delete', tab: def.tab(), matches: [def.key(row)] });
+  afterMasterChange();
+  renderMasterPanel();
+}
+function afterMasterChange(){
+  idbSet('master', MASTER_ALL);
+  applyMasterAll(false);
+  recalcAllCards();
+}
+function openPasteBox(){
+  const def = MASTER_DEFS[masterTab], box = document.getElementById('mForm');
+  const cols = def.fields.filter(f => !f.ro);
+  masterEdit = null;
+  box.innerHTML = `<div style="background:var(--paper-raised);border:1px solid var(--gold);border-radius:4px;padding:14px;margin-bottom:12px;">
+    <p class="desc" style="margin:0 0 8px;">Copy rows from Excel (or the Google Sheet) and paste them here — columns in this order:<br><b>${cols.map(f => escapeHtml(f.label || hdr(f))).join(' · ')}</b>. A header row is skipped. Rows whose ${masterTab === 'slab' ? 'item, unit and start date' : 'name'} already exist are updated.</p>
+    <textarea id="mPasteText" style="width:100%;min-height:150px;font-family:'IBM Plex Mono',monospace;font-size:12px;"></textarea>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;"><button type="button" class="bar-btn primary" id="mPasteSave">Check &amp; save</button><button type="button" class="bar-btn" id="mPasteCancel">Cancel</button><span id="mPasteMsg" class="sync-msg" style="margin:0;"></span></div></div>`;
+  box.querySelector('#mPasteCancel').addEventListener('click', () => { box.innerHTML = ''; });
+  box.querySelector('#mPasteSave').addEventListener('click', () => {
+    const msg = box.querySelector('#mPasteMsg');
+    const text = box.querySelector('#mPasteText').value.replace(/\r/g, '');
+    const lines = text.split('\n').filter(l => l.trim());
+    if(!lines.length){ msg.className = 'sync-msg bad'; msg.textContent = 'Nothing pasted.'; return; }
+    if(!lines.some(l => l.includes('\t'))){ msg.className = 'sync-msg bad'; msg.textContent = 'Copy the cells from Excel or Google Sheets so the columns are kept (tab-separated).'; return; }
+    const cleaned = [], errors = [];
+    lines.forEach((l, n) => {
+      const cells = l.split('\t');
+      if(n === 0 && normalize(cells[0]) === normalize(cols[0].label || hdr(cols[0]))) return;
+      const draft = {}; cols.forEach((f, i) => draft[f.k] = cells[i] || '');
+      const c = cleanMasterRow(draft);
+      if(c.err) errors.push(`line ${n + 1}: ${c.err}`); else cleaned.push(c.row);
+    });
+    if(errors.length){ msg.className = 'sync-msg bad'; msg.textContent = `⚠ Nothing saved — ${errors.length} line(s) need fixing: ` + errors.slice(0, 3).join(' · ') + (errors.length > 3 ? ' …' : ''); return; }
+    const list = def.list(), rowsOut = [];
+    let added = 0, changed = 0;
+    cleaned.forEach(row => {
+      const ex = list.find(r => def.same(r, row));
+      if(ex){ const key = def.key(ex); Object.assign(ex, row); rowsOut.push({ match: key, values: toSheetValues(ex) }); changed++; }
+      else{ if(masterTab === 'slab') Object.assign(row, { by: MASTER_ALL.displayName || '', at: fmtDateTime(new Date()) }); list.push(row); rowsOut.push({ match: null, values: toSheetValues(row) }); added++; }
+    });
+    queueOutbox({ type: 'rows', tab: def.tab(), rows: rowsOut });
+    afterMasterChange();
+    renderMasterPanel();
+    const m2 = document.getElementById('mForm');
+    if(m2) m2.innerHTML = `<p class="sync-msg ok">✓ ${added} added, ${changed} updated — being saved to the sheet.</p>`;
+  });
+}
+function exportMaster(){
+  const def = MASTER_DEFS[masterTab];
+  const rows = [def.fields.map(f => f.label || hdr(f))].concat(def.list().map(r => def.fields.map(f => f.calc ? f.calc(r) : (r[f.k] ?? ''))));
+  downloadCsv(rows, def.label.toLowerCase().replace(/\s+/g, '-') + '-' + fmtDate(new Date()) + '.csv');
+}
+// ---- Rate slab: settings + sheet check --------------------------------------------------------
+function slabSettingsHtml(admin){
+  return `<div class="row" style="gap:16px;flex-wrap:wrap;align-items:center;margin:0 0 12px;padding:10px 12px;border:1px solid var(--rule);border-radius:4px;background:var(--paper-raised);font-size:12.5px;">
+    <label>Default max % above the minimum <input id="ssPct" value="${SLAB_SET.maxPct}" style="width:56px;" ${admin ? '' : 'disabled'}></label>
+    <label title="Rates are rounded to paise when GST is added; differences up to this are ignored">Rounding allowance ₹ <input id="ssTol" value="${SLAB_SET.tol}" style="width:56px;" ${admin ? '' : 'disabled'}></label>
+    <label><input type="checkbox" id="ssBlock" ${SLAB_SET.missingBlocks ? 'checked' : ''} ${admin ? '' : 'disabled'}> A line with no slab keeps the bill from "Verified" (shows ❓)</label>
+    ${admin ? '<button type="button" class="bar-btn" id="ssSave">Save settings</button><span id="ssMsg" class="sync-msg" style="margin:0;"></span>' : ''}
+  </div>`;
+}
+function wireSlabSettings(){
+  const b = document.getElementById('ssSave');
+  if(!b) return;
+  b.addEventListener('click', () => {
+    const pct = numOrNull(document.getElementById('ssPct').value), tol = numOrNull(document.getElementById('ssTol').value);
+    const m = document.getElementById('ssMsg');
+    if(!(pct >= 0) || !(tol >= 0) || tol > 5){ m.className = 'sync-msg bad'; m.textContent = 'Max % must be 0 or more; the allowance between 0 and 5.'; return; }
+    SLAB_SET = { maxPct: pct, tol, missingBlocks: document.getElementById('ssBlock').checked };
+    MASTER_ALL.slabSettings = Object.assign({}, SLAB_SET);
+    queueOutbox({ type: 'rules', branch: 'slab', rules: MASTER_ALL.slabSettings });
+    afterMasterChange();
+    renderMasterPanel();
+  });
+}
+function slabChecksHtml(){
+  const rows = MASTER_ALL.slab || [];
+  const warn = [];
+  const seen = new Map();
+  rows.forEach(r => {
+    const k = normalize(r.item) + '|' + unitKey(r.unit) + '|' + (r.from || '');
+    if(seen.has(k)) warn.push(`"${r.item}" (${r.unit || 'no unit'}${r.from ? ', from ' + r.from : ''}) is listed twice.`);
+    seen.set(k, r);
+    if(!(r.min > 0)) warn.push(`"${r.item}" has no minimum rate.`);
+    if(!r.unit) warn.push(`"${r.item}" has no unit — it is compared with any unit.`);
+    if(r.from && dateNum(r.from) === null) warn.push(`"${r.item}" has an unreadable "Effective from" date "${r.from}".`);
+  });
+  const owner = new Map();
+  rows.forEach(r => [r.item, ...splitList(r.other)].forEach(n => {
+    const k = nameKey(n), o = owner.get(k);
+    if(o && nameKey(o) !== nameKey(r.item)) warn.push(`The name "${n}" points to two items: "${o}" and "${r.item}".`);
+    else owner.set(k, r.item);
+  }));
+  if(!warn.length) return '';
+  const uniq = [...new Set(warn)];
+  return `<div class="slab-gaps" style="margin-bottom:12px;"><b>Sheet check — ${uniq.length} thing${uniq.length === 1 ? '' : 's'} to fix:</b>${uniq.slice(0, 12).map(w => `<div>⚠ ${escapeHtml(w)}</div>`).join('')}${uniq.length > 12 ? `<div>… and ${uniq.length - 12} more</div>` : ''}</div>`;
+}
+
 // Matches every open bill again with the current lists (party first, then the item lines).
 function rematchOpenBills(){
   if(!window.__records.length) return;
@@ -2507,8 +2899,10 @@ function applyBranchTexts(){
   set('eyebrowText', t.eyebrow); set('ledeText', t.lede);
   set('excelMainText', t.excelMain); set('excelSubText', t.excelSub);
   set('footerNote', t.footerNote); set('versionBadge', APP_VERSION);
-  rulesToggle.textContent = t.rulesToggle || '⚙ Rules';
-  codesToggle.textContent = t.codesToggle || '📖 Codes';
+  rulesToggle.title = (t.rulesToggle || 'Rules').replace(/^\S+\s/, '');
+  codesToggle.title = (t.codesToggle || 'Codes').replace(/^\S+\s/, '');
+  set('sideBranch', BRANCH.key === 'clt' ? 'CALICUT · KANNUR' : 'ERNAKULAM');
+  set('sideFoot', APP_VERSION + ' · ' + (BRANCH.key === 'clt' ? 'Calicut · Kannur' : 'Ernakulam'));
   document.querySelectorAll('[data-branch-btn]').forEach(b => {
     const on = b.dataset.branchBtn === BRANCH.key;
     b.classList.toggle('active', on);
@@ -2566,11 +2960,430 @@ function showUpdateBanner(worker){
   wrap.insertBefore(banner, wrap.firstChild);
 }
 
+// =====================================================================================
+//  v8 — RATE SLAB (one safety slab for every branch, rates AFTER GST) and per-line checks
+//  Every bill line ends as exactly one of: ✓ checked and fine · ✗ discrepancy · ❓ could not be
+//  checked (no slab / different unit / slab not yet valid on the invoice date). Nothing is guessed:
+//  a slab rate is found only by the exact Tally item name printed on the bill (or a spelling listed
+//  on the slab row), in the same unit, valid on the invoice date.
+// =====================================================================================
+var SLAB = [];
+var SLAB_SET = { maxPct: 15, tol: 0.01, missingBlocks: true };
+var slabIdx = new Map(), slabNames = [];
+
+function r2(x){ return Math.round((Number(x) + Number.EPSILON) * 100) / 100; }
+function fmtPct(p){ return (Math.abs(p) < 1 ? p.toFixed(2) : p.toFixed(1)) + '%'; }
+// Units written many ways on bills and in the slab: compared on one spelling each.
+function unitKey(u){
+  const t = String(u || '').toLowerCase().replace(/[.\s]/g, '');
+  if(!t) return '';
+  if(/^(sqft|sft|sqfeet|squarefeet|sqfts)$/.test(t)) return 'sqft';
+  if(/^(kg|kgs|kilo|kilogram|kilograms)$/.test(t)) return 'kg';
+  if(/^(nos|no|pcs|pc|pics|pic|piece|pieces|number|numbers)$/.test(t)) return 'nos';
+  if(/^(roll|rolls|rol)$/.test(t)) return 'roll';
+  if(/^(bundle|bundles|bdl|bdls)$/.test(t)) return 'bundle';
+  if(/^(mtr|mtrs|m|meter|meters|metre|metres|rmt)$/.test(t)) return 'mtr';
+  if(/^(ft|feet|rft|runningfeet)$/.test(t)) return 'ft';
+  if(/^(box|boxes)$/.test(t)) return 'box';
+  if(/^(set|sets)$/.test(t)) return 'set';
+  return t;
+}
+// "DD-MM-YYYY" → 20261125 for comparing; blank = valid from the start (0); unreadable → null.
+function dateNum(s){
+  const t = String(s || '').trim();
+  if(!t) return 0;
+  const m = /^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})$/.exec(t);
+  return m ? (+m[3]) * 10000 + (+m[2]) * 100 + (+m[1]) : null;
+}
+function todayNum(){ const d = new Date(); return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate(); }
+
+function setSlab(rows, settings){
+  SLAB = (rows || []).filter(r => r && r.item);
+  if(settings){
+    if(isFinite(settings.maxPct)) SLAB_SET.maxPct = +settings.maxPct;
+    if(isFinite(settings.tol)) SLAB_SET.tol = +settings.tol;
+    if(typeof settings.missingBlocks === 'boolean') SLAB_SET.missingBlocks = settings.missingBlocks;
+  }
+  slabIdx = new Map();
+  SLAB.forEach(r => {
+    [r.item, ...splitList(r.other)].forEach(n => {
+      const k = nameKey(n);
+      if(!k) return;
+      if(!slabIdx.has(k)) slabIdx.set(k, []);
+      if(!slabIdx.get(k).includes(r)) slabIdx.get(k).push(r);
+    });
+  });
+  slabNames = [...slabIdx.keys()];
+}
+function slabMaxOf(r){
+  const pct = (r.maxPct !== null && r.maxPct !== undefined && r.maxPct !== '' && isFinite(r.maxPct)) ? +r.maxPct : SLAB_SET.maxPct;
+  return r2(r.min * (1 + pct / 100));
+}
+// Bills print long names cut short: a description that is the start of exactly ONE slab item counts.
+function slabCandidates(desc){
+  const k = nameKey(desc);
+  if(!k) return [];
+  if(slabIdx.has(k)) return slabIdx.get(k);
+  if(k.length < 16) return [];
+  const hits = new Set();
+  slabNames.forEach(n => { if(n.length > k.length && n.startsWith(k)) slabIdx.get(n).forEach(r => hits.add(r)); });
+  const items = new Set([...hits].map(r => nameKey(r.item)));
+  return items.size === 1 ? [...hits] : [];
+}
+function gstForLine(row, s){
+  if(s && s.gst !== null && s.gst !== undefined && isFinite(s.gst)) return +s.gst;
+  const mi = typeof masterSingleForDescription === 'function' ? masterSingleForDescription(row.description) : null;
+  if(mi && mi.gst !== null && mi.gst !== undefined && isFinite(mi.gst)) return +mi.gst;
+  const cat = rules[row.category];
+  if(cat && isFinite(cat.tax)) return +cat.tax;
+  if(cat && isFinite(cat.taxPct)) return +cat.taxPct;
+  return 18;
+}
+function slabFor(row, record, result){
+  if(!SLAB.length) return null;
+  const unitTxt = row.unit || 'unit';
+  const cands = slabCandidates(row.description);
+  if(!cands.length) return { status: 'none', gap: true, message: 'No rate slab for this item — add it in Rate slab.' };
+  const uk = unitKey(row.unit);
+  const sameUnit = cands.filter(r => !unitKey(r.unit) || unitKey(r.unit) === uk);
+  if(!sameUnit.length) return { status: 'unit', gap: true, message: `Rate slab is per ${cands[0].unit}, bill is per ${unitTxt} — can't compare.` };
+  let d = dateNum(record.parsed.invoiceDate);
+  if(!d) d = todayNum();
+  const valid = sameUnit.filter(r => { const f = dateNum(r.from); return f !== null && f <= d; });
+  if(!valid.length){
+    const firstFrom = sameUnit.map(r => r.from).filter(Boolean).sort((a, b) => dateNum(a) - dateNum(b))[0];
+    return { status: 'notyet', gap: true, message: `Rate slab starts ${firstFrom || '(unreadable date)'}, after this bill's date.` };
+  }
+  const latest = Math.max(...valid.map(r => dateNum(r.from)));
+  const pick = valid.filter(r => dateNum(r.from) === latest);
+  if(new Set(pick.map(r => nameKey(r.item))).size > 1)
+    return { status: 'ambiguous', gap: true, message: 'Two rate slab items share this name — fix the "Other names" in Rate slab.' };
+  const s = pick[pick.length - 1];
+  if(s.min === null || s.min === undefined || !isFinite(s.min)) return { status: 'none', gap: true, message: 'The rate slab row for this item has no minimum rate.' };
+
+  const g = gstForLine(row, s);
+  const billedIncl = r2(row.rate * (1 + g / 100));
+  const min = r2(s.min), max = slabMaxOf(s);
+  const tol = SLAB_SET.tol;
+  const qty = Number(row.quantity) || 0;
+  const out = { status: 'ok', gap: false, gst: g, billedIncl, min, max, unit: unitTxt, slab: s, diff: 0, pct: 0, total: 0 };
+  if(billedIncl < min - tol - 1e-9){
+    out.status = 'below'; out.diff = r2(min - billedIncl); out.pct = out.diff / min * 100; out.total = r2(out.diff * qty);
+    out.message = `Below rate slab: billed ₹${fmt(billedIncl)} vs minimum ₹${fmt(min)} per ${unitTxt} (incl GST ${g}%) — ₹${fmt(out.diff)} less (${fmtPct(out.pct)}) · loss ₹${fmt(out.total)} on ${fmtQty(qty)} ${unitTxt}`;
+  }else if(billedIncl > max + tol + 1e-9){
+    out.status = 'above'; out.diff = r2(billedIncl - max); out.pct = out.diff / max * 100; out.total = r2(out.diff * qty);
+    out.message = `Above rate slab: billed ₹${fmt(billedIncl)} vs maximum ₹${fmt(max)} per ${unitTxt} (incl GST ${g}%) — ₹${fmt(out.diff)} more (${fmtPct(out.pct)}) · ₹${fmt(out.total)} on ${fmtQty(qty)} ${unitTxt}`;
+  }
+  // The loading-list rate itself below the slab: the order was wrong, not only the bill.
+  if(result && result.expectedRate !== null && result.expectedRate !== undefined){
+    out.planIncl = r2(result.expectedRate * (1 + g / 100));
+    if(out.planIncl < min - tol - 1e-9) out.planNote = `Loading-list rate ₹${fmt(out.planIncl)} (incl GST) is itself below the slab minimum ₹${fmt(min)} — ₹${fmt(r2(min - out.planIncl))} less (${fmtPct((min - out.planIncl) / min * 100)})`;
+  }
+  return out;
+}
+
+const LOCAL_RESULT = { flagged: false, pending: false, expectedRate: null, qtyMismatch: false, rateMismatch: false, otherIssues: [], infoNotes: [] };
+function lineCheck(row, record){
+  const result = record.local ? LOCAL_RESULT : computeRow(row);
+  const slab = slabFor(row, record, result);
+  const slabFlag = !!slab && (slab.status === 'below' || slab.status === 'above');
+  const issues = [];
+  if(slabFlag) issues.push(slab.message);
+  if(!record.local && result.flagged){
+    if(result.rateMismatch) issues.push(result.rateWarning);
+    if(result.qtyMismatch) issues.push(result.qtyWarning);
+    if(result.bundleWarning) issues.push(result.bundleWarning);
+    if(result.itemMismatch) issues.push(result.itemMismatchWarning);
+    if(result.notDispatched) issues.push(result.notDispatchedWarning);
+    (result.otherIssues || []).forEach(x => issues.push(x));
+  }
+  const flagged = slabFlag || (!record.local && !!result.flagged);
+  if(flagged && slab && slab.planNote) issues.push(slab.planNote);
+  return { result, slab, flagged, issues, slabGap: !!(slab && slab.gap) };
+}
+// "after GST" wording for the loading-list rate check, used by both branches' formulas.
+function gstRateWarning(row, expectedRate, taxPct){
+  const k = 1 + (Number(taxPct) || 0) / 100;
+  const b = r2(row.rate * k), e = r2(expectedRate * k), diff = r2(b - e);
+  const pct = e !== 0 ? Math.abs(diff / e * 100) : 0;
+  const qty = Number(row.quantity) || 0;
+  return `Billed ₹${fmt(b)} vs loading list ₹${fmt(e)} per ${row.unit || 'unit'} (incl GST) — ${diff > 0 ? 'over' : 'short'} by ₹${fmt(Math.abs(diff))} (${fmtPct(pct)}) · ₹${fmt(r2(Math.abs(diff) * qty))} on ${fmtQty(qty)} ${row.unit || ''}`.trim();
+}
+function gatherSlabGaps(record){
+  const out = [];
+  record.items.forEach(row => { const sl = lineCheck(row, record).slab; if(sl && sl.gap) out.push(`${row.description}: ${sl.message}`); });
+  return out;
+}
+function renderSlabCell(tr, sl){
+  const cell = tr.querySelector('[data-field="slab"]');
+  if(!cell) return;
+  cell.className = 'num slab-cell';
+  if(!sl){ cell.innerHTML = '—'; cell.title = SLAB.length ? '' : 'The rate slab is empty'; return; }
+  if(sl.gap){ cell.classList.add('gap'); cell.innerHTML = '❓'; cell.title = sl.message; return; }
+  const range = `<span class="sl-range">${fmt(sl.min)} – ${fmt(sl.max)}</span>`;
+  if(sl.status === 'ok'){ cell.classList.add('ok'); cell.innerHTML = `✓ ${fmt(sl.billedIncl)}${range}`; }
+  else{ cell.classList.add('bad'); cell.innerHTML = `${sl.status === 'below' ? '▼' : '▲'} ${fmt(sl.billedIncl)}${range}`; }
+  cell.title = `Billed ${fmt(sl.billedIncl)} incl GST ${sl.gst}% · slab ${fmt(sl.min)} – ${fmt(sl.max)} per ${sl.unit}`;
+}
+function updateSlabStatus(){
+  const el = document.getElementById('slabStatus');
+  if(el) el.textContent = SLAB.length ? `💰 Rate slab: ${new Set(SLAB.map(r => nameKey(r.item))).size} items · max +${SLAB_SET.maxPct}%` : '💰 Rate slab is empty — slab check is off';
+  const nav = (id, n) => { const e = document.getElementById(id); if(e) e.textContent = n ? String(n) : ''; };
+  nav('navItems', MASTER.items.length); nav('navParties', MASTER.parties.length);
+  nav('navSlab', new Set(SLAB.map(r => nameKey(r.item))).size);
+  nav('navBills', window.__records.length + window.__skipped.length);
+}
+function recalcAllCards(){
+  document.querySelectorAll('.invoice-card').forEach(c => recalcCard(c));
+  renderOverview();
+}
+
+// =====================================================================================
+//  v8 — ONE-CLICK WHATSAPP PICTURE
+//  The picture is DRAWN from the bill's data (not a screen capture), so nothing is ever cut off:
+//  party, invoice, every discrepancy in words, every line with billed / slab / loading-list rates
+//  (all incl GST), the loss, and who checked it when. Copied to the clipboard → Ctrl+V in WhatsApp.
+// =====================================================================================
+const WA = { W: 1000, PAD: 34, scale: 2,
+  ink: '#1E2A38', soft: '#5D6B78', rule: '#D9DEE3', red: '#B3261E', redBg: '#FBEAE8', amber: '#9A5B00', amberBg: '#FFF4DF', green: '#1E7B45', greenBg: '#E6F4EC' };
+function waAccent(){ return getComputedStyle(document.documentElement).getPropertyValue('--gold').trim() || '#A9832E'; }
+function waWrap(ctx, text, maxW){
+  const out = [];
+  String(text || '').split('\n').forEach(par => {
+    const words = par.split(/\s+/);
+    let line = '';
+    words.forEach(w => {
+      const t = line ? line + ' ' + w : w;
+      if(ctx.measureText(t).width <= maxW || !line){
+        if(ctx.measureText(t).width > maxW && !line){   // one very long word: cut it
+          let cut = w; while(cut.length > 1 && ctx.measureText(cut).width > maxW) cut = cut.slice(0, -1);
+          out.push(cut); line = w.slice(cut.length);
+        }else line = t;
+      }else{ out.push(line); line = w; }
+    });
+    out.push(line);
+  });
+  return out;
+}
+function waCanvas(heightGuess){
+  const c = document.createElement('canvas');
+  c.width = WA.W * WA.scale; c.height = Math.min(30000, heightGuess * WA.scale);
+  const ctx = c.getContext('2d');
+  ctx.scale(WA.scale, WA.scale);
+  ctx.fillStyle = '#FFFFFF'; ctx.fillRect(0, 0, WA.W, heightGuess);
+  ctx.textBaseline = 'top';
+  return { c, ctx };
+}
+function waCrop(c, h){
+  const out = document.createElement('canvas');
+  out.width = c.width; out.height = Math.ceil(h * WA.scale);
+  out.getContext('2d').drawImage(c, 0, 0);
+  return out;
+}
+function waHeader(ctx, title, stampText, stampKind){
+  ctx.fillStyle = waAccent(); ctx.fillRect(0, 0, WA.W, 58);
+  ctx.fillStyle = '#FFFFFF'; ctx.font = '600 15px "IBM Plex Mono", monospace';
+  ctx.fillText(title, WA.PAD, 21);
+  if(stampText){
+    ctx.font = '700 15px Inter, sans-serif';
+    const w = ctx.measureText(stampText).width + 28;
+    const col = stampKind === 'ok' ? WA.green : stampKind === 'bad' ? WA.red : WA.amber;
+    ctx.fillStyle = '#FFFFFF'; waRound(ctx, WA.W - WA.PAD - w, 12, w, 34, 6); ctx.fill();
+    ctx.fillStyle = col; ctx.fillText(stampText, WA.W - WA.PAD - w + 14, 21);
+  }
+  return 58;
+}
+function waRound(ctx, x, y, w, h, r){
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+function waBox(ctx, y, lines, kind, head){
+  const fg = kind === 'bad' ? WA.red : WA.amber, bg = kind === 'bad' ? WA.redBg : WA.amberBg;
+  const innerW = WA.W - WA.PAD * 2 - 28;
+  ctx.font = '500 15px Inter, sans-serif';
+  const wrapped = lines.map(l => waWrap(ctx, '• ' + l, innerW));
+  const h = 18 + (head ? 26 : 0) + wrapped.reduce((t, w) => t + w.length * 21 + 5, 0) + 10;
+  ctx.fillStyle = bg; waRound(ctx, WA.PAD, y, WA.W - WA.PAD * 2, h, 6); ctx.fill();
+  ctx.strokeStyle = fg; ctx.lineWidth = 1.5; ctx.stroke();
+  let yy = y + 14;
+  if(head){ ctx.fillStyle = fg; ctx.font = '700 17px Inter, sans-serif'; ctx.fillText(head, WA.PAD + 14, yy); yy += 26; }
+  ctx.font = '500 15px Inter, sans-serif'; ctx.fillStyle = kind === 'bad' ? '#7A1A14' : '#6B4200';
+  wrapped.forEach(w => { w.forEach(t => { ctx.fillText(t, WA.PAD + 14, yy); yy += 21; }); yy += 5; });
+  return y + h + 14;
+}
+function waStamp(record){
+  const k = record.statusKind;
+  if(k === 'verified') return ['VERIFIED ✓', 'ok'];
+  if(k === 'discrepancy') return [`DISCREPANCY (${record.currentDiscrepancyCount || 0})`, 'bad'];
+  if(k === 'slab') return ['SLAB MISSING ❓', 'warn'];
+  if(k === 'readcheck') return ['CHECK THE READ', 'warn'];
+  if(k === 'name') return ['CUSTOMER NOT PICKED', 'warn'];
+  return ['AWAITING RATES', 'warn'];
+}
+function drawBillImage(record){
+  const local = !!record.local;
+  const rowsData = record.items.map(row => {
+    const lc = lineCheck(row, record), sl = lc.slab, res = lc.result;
+    const g = sl && sl.gst !== undefined ? sl.gst : gstForLine(row, null);
+    const billed = sl && sl.billedIncl !== undefined ? sl.billedIncl : r2(row.rate * (1 + g / 100));
+    const plan = !local && res.expectedRate !== null && res.expectedRate !== undefined ? r2(res.expectedRate * (1 + g / 100)) : null;
+    const mark = lc.flagged ? '✗' : (res.pending && !res.qtyMismatch) ? '…' : lc.slabGap ? '❓' : '✓';
+    return { row, sl, billed, plan, mark, flagged: lc.flagged, gap: lc.slabGap };
+  });
+  const { c, ctx } = waCanvas(1400 + record.items.length * 90 + 60 * (gatherBillDiscrepancies(record).length + gatherSlabGaps(record).length));
+  const [stampText, stampKind] = waStamp(record);
+  let y = waHeader(ctx, `INVOICE AUDIT · ${(BRANCH.key === 'clt' ? 'CALICUT · KANNUR' : 'ERNAKULAM')}${local ? ' · LOCAL SALE' : ''}`, stampText, stampKind) + 22;
+  // party + invoice
+  ctx.fillStyle = WA.ink; ctx.font = '700 26px Fraunces, Georgia, serif';
+  waWrap(ctx, record.parsed.partyName || record.filename, WA.W - WA.PAD * 2).forEach(t => { ctx.fillText(t, WA.PAD, y); y += 33; });
+  ctx.font = '500 15px "IBM Plex Mono", monospace'; ctx.fillStyle = WA.soft;
+  const sub = [record.parsed.invoiceNumber || 'No invoice no', record.parsed.invoiceDate || 'no date', local ? 'Local sale — checked against the rate slab' : (record.selectedBlockName ? 'Loading list: ' + record.selectedBlockName : 'Loading list: not matched')].join('  ·  ');
+  waWrap(ctx, sub, WA.W - WA.PAD * 2).forEach(t => { ctx.fillText(t, WA.PAD, y); y += 21; });
+  y += 14;
+  // what is wrong, in words
+  const issues = gatherBillDiscrepancies(record), gaps = gatherSlabGaps(record);
+  if(issues.length) y = waBox(ctx, y, issues, 'bad', `⚠ ${issues.length} discrepanc${issues.length === 1 ? 'y' : 'ies'}${record.slabLoss > 0 ? `  ·  Loss vs rate slab ₹${fmt(record.slabLoss)}` : ''}`);
+  if(gaps.length) y = waBox(ctx, y, gaps, 'warn', '❓ Not checked — no rate slab');
+  if(!issues.length && !gaps.length && record.statusKind === 'verified'){
+    ctx.fillStyle = WA.greenBg; waRound(ctx, WA.PAD, y, WA.W - WA.PAD * 2, 44, 6); ctx.fill();
+    ctx.fillStyle = WA.green; ctx.font = '700 17px Inter, sans-serif'; ctx.fillText('✓ Every line checked — rates within the slab' + (local ? '' : ' and the loading list'), WA.PAD + 14, y + 13);
+    y += 58;
+  }
+  // line table
+  const cols = local
+    ? [['#', 34, 'l'], ['Item', 0, 'l'], ['Qty', 118, 'r'], ['Billed ₹', 104, 'r'], ['Slab min – max ₹', 170, 'r'], ['', 34, 'c']]
+    : [['#', 34, 'l'], ['Item', 0, 'l'], ['Qty', 112, 'r'], ['Billed ₹', 98, 'r'], ['Loading list ₹', 112, 'r'], ['Slab min – max ₹', 158, 'r'], ['', 34, 'c']];
+  const fixed = cols.reduce((t, c2) => t + c2[1], 0) + (cols.length - 1) * 10;
+  cols[1][1] = WA.W - WA.PAD * 2 - fixed;
+  const xs = []; let x = WA.PAD; cols.forEach(c2 => { xs.push(x); x += c2[1] + 10; });
+  const cellText = (i, txt, yy, font, color) => {
+    ctx.font = font; ctx.fillStyle = color;
+    const [, w, al] = cols[i];
+    const tw = ctx.measureText(txt).width;
+    ctx.fillText(txt, al === 'r' ? xs[i] + w - tw : al === 'c' ? xs[i] + (w - tw) / 2 : xs[i], yy);
+  };
+  ctx.fillStyle = '#EEF1F4'; ctx.fillRect(WA.PAD - 8, y, WA.W - WA.PAD * 2 + 16, 30);
+  cols.forEach((c2, i) => cellText(i, c2[0], y + 8, '700 12.5px Inter, sans-serif', WA.soft));
+  ctx.font = '500 12px Inter, sans-serif'; ctx.fillStyle = WA.soft;
+  y += 30;
+  rowsData.forEach((d, n) => {
+    ctx.font = '500 15px Inter, sans-serif';
+    const nameLines = waWrap(ctx, d.row.description, cols[1][1]);
+    const h = Math.max(1, nameLines.length) * 20 + 16;
+    if(d.flagged || d.gap){ ctx.fillStyle = d.flagged ? WA.redBg : WA.amberBg; ctx.fillRect(WA.PAD - 8, y, WA.W - WA.PAD * 2 + 16, h); }
+    ctx.strokeStyle = WA.rule; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(WA.PAD - 8, y + h); ctx.lineTo(WA.W - WA.PAD + 8, y + h); ctx.stroke();
+    const col = d.flagged ? WA.red : d.gap ? WA.amber : WA.ink;
+    cellText(0, String(n + 1), y + 8, '500 14px "IBM Plex Mono", monospace', WA.soft);
+    nameLines.forEach((t, k) => cellText(1, t, y + 8 + k * 20, '500 15px Inter, sans-serif', WA.ink));
+    cellText(2, `${fmtQty(d.row.quantity)} ${d.row.unit || ''}`.trim(), y + 8, '500 14px "IBM Plex Mono", monospace', WA.ink);
+    const belowOrAbove = d.sl && (d.sl.status === 'below' || d.sl.status === 'above');
+    cellText(3, fmt(d.billed), y + 8, `${belowOrAbove ? 700 : 500} 14px "IBM Plex Mono", monospace`, belowOrAbove ? WA.red : WA.ink);
+    let ci = 4;
+    if(!local){ cellText(4, d.plan !== null ? fmt(d.plan) : '—', y + 8, '500 14px "IBM Plex Mono", monospace', WA.ink); ci = 5; }
+    const slabTxt = !d.sl ? '—' : d.sl.gap ? 'no slab' : `${fmt(d.sl.min)} – ${fmt(d.sl.max)}`;
+    cellText(ci, slabTxt, y + 8, '500 14px "IBM Plex Mono", monospace', d.sl && d.sl.gap ? WA.amber : WA.soft);
+    if(d.sl && (d.sl.status === 'below' || d.sl.status === 'above'))
+      cellText(ci, `${d.sl.status === 'below' ? '▼' : '▲'} ₹${fmt(d.sl.diff)} (${fmtPct(d.sl.pct)})`, y + 28, '700 12.5px Inter, sans-serif', WA.red);
+    cellText(ci + 1, d.mark, y + 6, '700 18px Inter, sans-serif', col);
+    y += Math.max(h, d.sl && (d.sl.status === 'below' || d.sl.status === 'above') ? 48 : h);
+  });
+  y += 12;
+  ctx.font = '500 13px Inter, sans-serif'; ctx.fillStyle = WA.soft;
+  ctx.fillText('All rates per unit, including GST.', WA.PAD, y);
+  // totals
+  const tot = [];
+  const lines = record.items.reduce((t, r) => t + (Number(r.amount) || 0), 0);
+  tot.push(['Taxable value', '₹' + fmt(record.parsed.taxableTotal !== null && record.parsed.taxableTotal !== undefined ? record.parsed.taxableTotal : lines)]);
+  if(record.parsed.grandTotal !== null && record.parsed.grandTotal !== undefined) tot.push(['Bill total (incl GST)', '₹' + fmt(record.parsed.grandTotal)]);
+  if(record.slabLoss > 0) tot.push(['Loss vs rate slab', '₹' + fmt(record.slabLoss)]);
+  tot.forEach(([k, v], i) => {
+    ctx.font = (i === tot.length - 1 && record.slabLoss > 0 ? '700 ' : '600 ') + '16px Inter, sans-serif';
+    ctx.fillStyle = k === 'Loss vs rate slab' ? WA.red : WA.ink;
+    const vw = ctx.measureText(v).width;
+    ctx.fillText(k, WA.W - WA.PAD - 360, y); ctx.fillText(v, WA.W - WA.PAD - vw, y);
+    y += 26;
+  });
+  y += 14;
+  ctx.strokeStyle = WA.rule; ctx.beginPath(); ctx.moveTo(WA.PAD, y); ctx.lineTo(WA.W - WA.PAD, y); ctx.stroke();
+  y += 12;
+  ctx.font = '500 12.5px "IBM Plex Mono", monospace'; ctx.fillStyle = WA.soft;
+  const who = (syncSaved().displayName || syncSaved().user || '');
+  ctx.fillText(`Checked${who ? ' by ' + who : ''} · ${fmtDateTime(new Date())} · Invoice Audit ${APP_VERSION} · read from the Tally PDF`, WA.PAD, y);
+  y += 30;
+  return waCrop(c, y);
+}
+function drawDayImage(){
+  const recs = window.__records.slice().sort((a, b) => a.seq - b.seq);
+  const skipped = window.__skipped.filter(s => s.kind === 'failed');
+  const { c, ctx } = waCanvas(400 + recs.length * 64 + skipped.length * 40);
+  let y = waHeader(ctx, `INVOICE AUDIT · ${(BRANCH.key === 'clt' ? 'CALICUT · KANNUR' : 'ERNAKULAM')} · DAY SUMMARY`, fmtDate(new Date()), 'ok') + 22;
+  const n = k => recs.filter(r => r.statusKind === k).length;
+  const loss = recs.reduce((t, r) => t + (r.slabLoss || 0), 0);
+  ctx.fillStyle = WA.ink; ctx.font = '700 24px Fraunces, Georgia, serif';
+  ctx.fillText(`${recs.length} bill${recs.length === 1 ? '' : 's'} checked · ${n('verified')} verified · ${n('discrepancy')} with discrepancies`, WA.PAD, y); y += 34;
+  ctx.font = '500 15px Inter, sans-serif'; ctx.fillStyle = loss > 0 ? WA.red : WA.soft;
+  ctx.fillText(loss > 0 ? `Total loss against the rate slab: ₹${fmt(loss)}` : 'No bill below the rate slab.', WA.PAD, y); y += 22;
+  const pend = recs.length - n('verified') - n('discrepancy');
+  if(pend || skipped.length){ ctx.fillStyle = WA.amber; ctx.fillText(`${pend ? pend + ' still pending a check' : ''}${pend && skipped.length ? ' · ' : ''}${skipped.length ? skipped.length + ' file(s) could not be read' : ''}`, WA.PAD, y); y += 22; }
+  y += 12;
+  recs.forEach(r => {
+    const [st, kind] = waStamp(r);
+    const col = kind === 'ok' ? WA.green : kind === 'bad' ? WA.red : WA.amber;
+    ctx.font = '600 16px Inter, sans-serif';
+    const party = waWrap(ctx, `#${r.seq}  ${r.parsed.partyName || r.filename}`, WA.W - WA.PAD * 2 - 260)[0];
+    ctx.fillStyle = WA.ink; ctx.fillText(party, WA.PAD, y);
+    ctx.font = '700 13.5px Inter, sans-serif'; ctx.fillStyle = col;
+    const sw = ctx.measureText(st).width; ctx.fillText(st, WA.W - WA.PAD - sw, y + 2);
+    y += 22;
+    ctx.font = '500 13px "IBM Plex Mono", monospace'; ctx.fillStyle = WA.soft;
+    const first = gatherBillDiscrepancies(r)[0];
+    const sub = [r.parsed.invoiceNumber || '', r.local ? 'Local sale' : '', r.slabLoss > 0 ? 'Loss ₹' + fmt(r.slabLoss) : '', first ? first : ''].filter(Boolean).join(' · ');
+    waWrap(ctx, sub, WA.W - WA.PAD * 2).slice(0, 2).forEach(t => { ctx.fillText(t, WA.PAD + 30, y); y += 18; });
+    y += 10;
+    ctx.strokeStyle = WA.rule; ctx.beginPath(); ctx.moveTo(WA.PAD, y - 4); ctx.lineTo(WA.W - WA.PAD, y - 4); ctx.stroke();
+    y += 6;
+  });
+  skipped.forEach(s => {
+    ctx.font = '600 14px Inter, sans-serif'; ctx.fillStyle = WA.red;
+    ctx.fillText(waWrap(ctx, `#${s.seq}  ${s.filename} — not read (${s.code})`, WA.W - WA.PAD * 2)[0], WA.PAD, y); y += 26;
+  });
+  y += 10;
+  ctx.font = '500 12.5px "IBM Plex Mono", monospace'; ctx.fillStyle = WA.soft;
+  ctx.fillText(`${fmtDateTime(new Date())} · Invoice Audit ${APP_VERSION}`, WA.PAD, y);
+  return waCrop(c, y + 30);
+}
+// Copy → Ctrl+V in WhatsApp. Where the browser won't allow copying a picture, it is saved instead.
+async function copyCanvasToClipboard(makeCanvas, btn, fileName){
+  const original = btn.textContent;
+  const done = t => { btn.textContent = t; setTimeout(() => { btn.textContent = original; }, 2600); };
+  try{ if(document.fonts && document.fonts.ready) await document.fonts.ready; }catch(e){}
+  const canvas = makeCanvas();
+  const blobP = new Promise(res => canvas.toBlob(res, 'image/png'));
+  window.__lastWaCanvas = canvas;
+  try{
+    if(navigator.clipboard && window.ClipboardItem){
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blobP })]);
+      done('✓ Copied — paste in WhatsApp (Ctrl+V)');
+      return 'copied';
+    }
+  }catch(e){ console.warn('[whatsapp] copy refused, saving instead', e); }
+  const blob = await blobP;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = fileName; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  done('⬇ Saved as a picture');
+  return 'saved';
+}
+function copyBillImage(record, btn){
+  const name = (record.parsed.invoiceNumber || record.filename).replace(/[^\w.-]+/g, '_') + '.png';
+  return copyCanvasToClipboard(() => drawBillImage(record), btn, name);
+}
+
 // ---- Start ---------------------------------------------------------------------------------------
 (async function bootV7(){
   applyBranchTexts();
-  document.getElementById('syncSettingsBtn').addEventListener('click', () => { if(openOnly(syncPanel)) renderSyncPanel(); });
   document.getElementById('syncNowBtn').addEventListener('click', () => fullSync());
+  initLockScreen();
   await loadPersisted();                         // this browser's rules, log, parser report
   try{ outbox = (await idbGet('outbox')) || []; }catch(e){ outbox = []; }
   try{ MASTER_ALL = (await idbGet('master')) || null; }catch(e){ MASTER_ALL = null; }

@@ -23,6 +23,12 @@
   if(b !== 'clt') b = 'ekm';
   document.documentElement.setAttribute('data-branch', b);
   window.IA_BRANCH = b;
+  // Nothing is shown until someone logs in with a user from the Google Sheet (remembered on this
+  // PC until "Log out").
+  var loggedIn = false;
+  try{ var c = JSON.parse(localStorage.getItem('ia.sync') || 'null'); loggedIn = !!(c && c.url && c.user && c.hash); }catch(e){}
+  if(!loggedIn) document.documentElement.classList.add('locked');
+  try{ if(localStorage.getItem('ia.side') === 'collapsed') document.documentElement.classList.add('side-collapsed'); }catch(e){}
   // Chrome may offer "install" before the app's code has loaded — keep the offer for it.
   window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); window.__installEvt = e; });
 })();
@@ -79,7 +85,55 @@
     padding: 40px 20px 80px;
   }
 
-  .wrap{ max-width: 1080px; margin: 0 auto; }
+  .wrap{ max-width: 1240px; margin: 0 auto; }
+  .shell{ margin-left: 228px; transition: margin-left .18s; }
+  html.side-collapsed .shell{ margin-left: 64px; }
+
+  /* ---- v8: left ☰ sidebar ---- */
+  .side{ position: fixed; top: 0; left: 0; bottom: 0; width: 220px; background: #1E2A38; color: #E8EDF2; z-index: 60;
+    display: flex; flex-direction: column; transition: width .18s; overflow: hidden; }
+  html.side-collapsed .side{ width: 56px; }
+  .side-head{ display: flex; align-items: center; gap: 10px; padding: 12px 10px; border-bottom: 1px solid rgba(255,255,255,.08); min-height: 58px; }
+  .side-toggle{ flex: none; width: 36px; height: 36px; border: none; border-radius: 6px; background: transparent; color: #fff; font-size: 20px; cursor: pointer; }
+  .side-toggle:hover{ background: rgba(255,255,255,.1); }
+  .side-title{ font-family: 'Fraunces', serif; font-size: 17px; white-space: nowrap; }
+  .side-title small{ display: block; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #9FB0C0; letter-spacing: .04em; }
+  .side nav{ flex: 1; overflow-y: auto; padding: 8px 6px; }
+  .nav-btn{ display: flex; align-items: center; gap: 12px; width: 100%; border: none; background: transparent; color: #D5DEE7; text-align: left;
+    font-family: 'Inter', sans-serif; font-size: 13.5px; padding: 9px 10px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+  .nav-btn .ni{ flex: none; width: 24px; text-align: center; font-size: 16px; }
+  .nav-btn:hover{ background: rgba(255,255,255,.08); color: #fff; }
+  .nav-btn.active{ background: var(--gold); color: #fff; font-weight: 600; }
+  .nav-btn[hidden]{ display: none; }
+  .nav-sep{ height: 1px; background: rgba(255,255,255,.08); margin: 8px 6px; }
+  .nav-count{ margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; opacity: .7; }
+  html.side-collapsed .side-title, html.side-collapsed .nav-btn .nl, html.side-collapsed .nav-count{ display: none; }
+  .side-foot{ padding: 10px 14px; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #8EA0B2; border-top: 1px solid rgba(255,255,255,.08); white-space: nowrap; }
+  html.side-collapsed .side-foot{ display: none; }
+  html.locked .side{ display: none; }
+  html.locked .shell{ margin-left: 0; }
+  body:not([data-view="bills"]) #viewBills{ display: none; }
+  @media (max-width: 800px){
+    .shell, html.side-collapsed .shell{ margin-left: 56px; }
+    html:not(.side-collapsed) .side{ box-shadow: 0 0 30px rgba(0,0,0,.35); }
+  }
+  body.screenshot-mode .side{ display: none; }
+  body.screenshot-mode .shell{ margin-left: 0; }
+
+  /* ---- v8: rate slab column + local sales ---- */
+  .slab-cell{ font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; white-space: nowrap; }
+  .slab-cell .sl-range{ display: block; color: var(--ink-soft); font-size: 10.5px; }
+  .slab-cell.ok{ color: var(--green); } .slab-cell.bad{ color: var(--red); font-weight: 600; } .slab-cell.gap{ color: var(--amber); }
+  .slab-note{ margin-top: 4px; font-size: 11.5px; color: var(--red); font-weight: 600; line-height: 1.4; }
+  .slab-note.above{ color: #B4570B; }
+  .slab-gap-note{ margin-top: 4px; font-size: 11.5px; color: var(--amber); line-height: 1.4; }
+  .invoice-card.local .plan-col{ display: none; }
+  .local-tag{ display: inline-block; font-family: 'IBM Plex Mono', monospace; font-size: 11px; padding: 2px 8px; border-radius: 3px; background: #EFE6F7; color: #6A3D91; border: 1px solid #B99AD3; }
+  .dropzone.local-zone{ border-color: #B99AD3; }
+  .slab-gaps{ margin: 8px 0 0; padding: 8px 12px; border: 1px dashed var(--amber); border-radius: 4px; background: var(--amber-bg); font-size: 12.5px; color: var(--amber); }
+  .slab-gaps div{ margin: 2px 0; }
+  .loss-chip{ display: inline-block; margin-left: 10px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; padding: 1px 8px; border-radius: 3px; background: var(--red); color: #fff; }
+  .wa-btn{ background: #1F8F4E !important; color: #fff !important; border-color: #1F8F4E !important; }
 
   header{ margin-bottom: 22px; }
   header .eyebrow{
@@ -147,7 +201,7 @@
   .dropzone .sub{ font-size: 12px; color: var(--ink-soft); }
   .dropzone input{ display:none; }
 
-  .zones{ display:grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 10px; }
+  .zones{ display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 10px; }
   @media (max-width: 700px){ .zones{ grid-template-columns: 1fr; } }
 
   .excel-status{
@@ -269,7 +323,10 @@
   .missing-item-row{ font-size: 12.5px; font-family:'IBM Plex Mono', monospace; color: var(--red); font-weight:600; background: var(--red-bg); border: 1px solid var(--red); border-radius: 3px; padding: 8px 10px; margin-bottom: 6px; }
 
   .items-table{ width:100%; overflow-x:auto; }
-  table{ width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 1020px; }
+  table{ width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .items-table table{ min-width: 1180px; }
+  .invoice-card.local table{ min-width: 0; }
+  .invoice-card{ min-width: 0; }
   thead th{
     text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em;
     color: var(--ink-soft); border-bottom: 1px solid var(--rule-strong); padding: 6px 6px; font-weight: 600;
@@ -279,7 +336,8 @@
     padding: 7px 6px; border-bottom: 1px solid var(--rule); font-family:'IBM Plex Mono', monospace;
     vertical-align: middle;
   }
-  tbody td.desc{ font-family:'Inter', sans-serif; max-width:170px; }
+  tbody td.desc{ font-family:'Inter', sans-serif; min-width:240px; max-width:320px; }
+  .invoice-card.local tbody td.desc{ max-width:none; }
   tr.flag td{ background: var(--red-bg); }
   tr.pending td{ background: var(--amber-bg); }
   .status{ font-size: 15px; text-align:center; }
@@ -511,11 +569,69 @@
   .master-note{ font-size:12px; color:var(--ink-soft); margin:6px 0 0; line-height:1.5; }
   .src-tag{ display:inline-block; font-family:'IBM Plex Mono', monospace; font-size:10.5px; padding:1px 6px; border-radius:3px; background:var(--accent-bg); color:var(--gold); border:1px solid var(--gold); margin-left:6px; vertical-align:1px; }
   .restored-note{ font-family:'IBM Plex Mono', monospace; font-size:12px; color:var(--ink-soft); background:var(--paper-raised); border:1px dashed var(--rule-strong); border-radius:4px; padding:8px 12px; margin-bottom:16px; }
+  /* ---- v7.1: login screen — the app stays hidden until a user logs in ---- */
+  .lock{ display:none; min-height: calc(100vh - 120px); align-items:center; justify-content:center; }
+  html.locked .lock{ display:flex; }
+  html.locked .wrap{ display:none; }
+  .lock-card{ width:100%; max-width:420px; background:var(--paper-raised); border:1px solid var(--rule-strong); border-radius:6px; padding:30px 28px 24px; box-shadow:0 10px 30px rgba(30,42,56,.08); }
+  .lock-card .brand-logo{ width:44px; height:44px; vertical-align:middle; }
+  .lock-card h1{ font-size:28px; margin:0 0 4px; display:flex; align-items:center; }
+  .lock-card .lock-sub{ font-size:13px; color:var(--ink-soft); margin:0 0 20px; line-height:1.5; }
+  .lock-card label{ display:block; font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-soft); margin:12px 0 5px; }
+  .lock-card input{ width:100%; font-family:'IBM Plex Mono', monospace; font-size:13px; border:1px solid var(--rule-strong); border-radius:3px; padding:9px 10px; background:#fff; }
+  .lock-card input:focus{ outline:2px solid var(--gold); outline-offset:1px; }
+  .lock-card button{ width:100%; margin-top:18px; font-family:'IBM Plex Mono', monospace; font-size:13px; background:var(--ink); color:var(--paper-raised); border:none; border-radius:3px; padding:10px; cursor:pointer; }
+  .lock-card button:disabled{ opacity:.6; cursor:wait; }
+  .lock-card .lock-url-note{ font-size:11.5px; color:var(--ink-soft); margin-top:5px; }
+  .lock-card .lock-url-note span{ color:var(--gold); cursor:pointer; text-decoration:underline; }
+  .lock-msg{ margin-top:12px; min-height:18px; font-family:'IBM Plex Mono', monospace; font-size:12px; }
+  .lock-msg.bad{ color:var(--red); } .lock-msg.ok{ color:var(--green); }
+  .lock-foot{ margin-top:16px; font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--ink-soft); text-align:center; }
   .brand-logo .lg-accent{ stroke: var(--gold); }
   .brand-logo .lg-accent-f{ fill: var(--gold); }
 </style>
 </head>
-<body>
+<body data-view="bills">
+<div class="lock" id="lockScreen">
+  <form class="lock-card" id="lockForm" autocomplete="on" onsubmit="return false;">
+    <h1><span class="brand-logo" style="margin-right:12px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#1E2A38"/><g class="lg-accent" stroke-opacity=".6" stroke-width="2"><path d="M8 20H56M8 32H56M8 44H56M20 8V56M32 8V56M44 8V56"/></g><rect x="17" y="10" width="26" height="36" rx="3" fill="#FAF7EF"/><path d="M22 18H38M22 24H38M22 30H32" stroke="#1E2A38" stroke-opacity=".45" stroke-width="2.5" stroke-linecap="round"/><circle class="lg-accent-f" cx="43" cy="44" r="12" stroke="#1E2A38" stroke-width="3"/><path d="M37.5 44.5l4 4 7.5-8" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Invoice Audit</h1>
+    <p class="lock-sub" id="lockSub">Log in with your user name and password from the Invoice Audit Google Sheet.</p>
+    <div id="lockUrlBox">
+      <label for="lockUrl">Web app URL</label>
+      <input id="lockUrl" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="url">
+    </div>
+    <div class="lock-url-note" id="lockUrlNote" hidden>Sheet link saved on this PC · <span id="lockUrlChange">change</span></div>
+    <label for="lockUser">User name</label>
+    <input id="lockUser" autocomplete="username">
+    <label for="lockPass">Password</label>
+    <input id="lockPass" type="password" autocomplete="current-password">
+    <button type="submit" id="lockBtn">Log in</button>
+    <div class="lock-msg" id="lockMsg"></div>
+    <div class="lock-foot">Stays logged in on this PC until you press Log out · <span id="lockVersion"></span></div>
+  </form>
+</div>
+<aside class="side" id="side">
+  <div class="side-head">
+    <button type="button" class="side-toggle" id="sideToggle" title="Show / hide the menu" aria-label="Menu">☰</button>
+    <div class="side-title">Invoice Audit<small id="sideBranch"></small></div>
+  </div>
+  <nav>
+    <button type="button" class="nav-btn active" data-view="bills"><span class="ni">🧾</span><span class="nl">Check bills</span><span class="nav-count" id="navBills"></span></button>
+    <div class="nav-sep"></div>
+    <button type="button" class="nav-btn" data-view="items" id="masterToggle"><span class="ni">📦</span><span class="nl">Item master</span><span class="nav-count" id="navItems"></span></button>
+    <button type="button" class="nav-btn" data-view="parties"><span class="ni">👥</span><span class="nl">Party master</span><span class="nav-count" id="navParties"></span></button>
+    <button type="button" class="nav-btn" data-view="slab"><span class="ni">💰</span><span class="nl">Rate slab</span><span class="nav-count" id="navSlab"></span></button>
+    <div class="nav-sep"></div>
+    <button type="button" class="nav-btn" data-view="rules" id="rulesToggle"><span class="ni">⚙</span><span class="nl">Rules &amp; tolerances</span></button>
+    <button type="button" class="nav-btn" data-view="codes" id="codesToggle"><span class="ni">📖</span><span class="nl">Code reference</span></button>
+    <button type="button" class="nav-btn" data-view="log" id="logToggle"><span class="ni">📋</span><span class="nl">Discrepancy log</span></button>
+    <button type="button" class="nav-btn" data-view="parser" id="parserReportToggle"><span class="ni">🔍</span><span class="nl">Parser report</span></button>
+    <div class="nav-sep"></div>
+    <button type="button" class="nav-btn" data-view="sync" id="syncSettingsBtn"><span class="ni">☁</span><span class="nl">Sync &amp; login</span></button>
+  </nav>
+  <div class="side-foot" id="sideFoot"></div>
+</aside>
+<div class="shell">
 <div class="wrap">
   <div class="app-bar">
     <div class="branch-switch" role="group" aria-label="Branch">
@@ -524,12 +640,18 @@
     <div class="sync-box">
       <span class="sync-status" id="syncStatus">☁ Google Sheet not connected</span>
       <button type="button" class="bar-btn" id="syncNowBtn" hidden>⟳ Sync now</button>
-      <button type="button" class="bar-btn" id="syncSettingsBtn">☁ Sync settings</button>
       <button type="button" class="bar-btn primary" id="installBtn" hidden>⬇ Install app</button>
+      <button type="button" class="bar-btn" id="logoutBtn" title="Lock the app on this PC — the next person must log in">⏻ Log out</button>
     </div>
   </div>
   <div class="panel" id="syncPanel"></div>
+  <div class="panel" id="masterPanel"></div>
+  <div class="panel" id="rulesPanel"></div>
+  <div class="panel" id="codesPanel"></div>
+  <div class="panel" id="logPanel"></div>
+  <div class="panel" id="parserReportPanel"></div>
 
+  <div id="viewBills">
   <header>
     <p class="eyebrow" id="eyebrowText"></p>
     <h1><span class="brand-logo"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#1E2A38"/><g class="lg-accent" stroke-opacity=".6" stroke-width="2"><path d="M8 20H56M8 32H56M8 44H56M20 8V56M32 8V56M44 8V56"/></g><rect x="17" y="10" width="26" height="36" rx="3" fill="#FAF7EF"/><path d="M22 18H38M22 24H38M22 30H32" stroke="#1E2A38" stroke-opacity=".45" stroke-width="2.5" stroke-linecap="round"/><circle class="lg-accent-f" cx="43" cy="44" r="12" stroke="#1E2A38" stroke-width="3"/><path d="M37.5 44.5l4 4 7.5-8" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Invoice Audit <span class="version-badge" id="versionBadge"></span></h1>
@@ -537,18 +659,9 @@
   </header>
 
   <div class="toggles">
-    <button class="toggle-btn" id="masterToggle">📦 Items &amp; parties (Google Sheet)</button>
-    <button class="toggle-btn" id="rulesToggle"></button>
-    <button class="toggle-btn" id="codesToggle"></button>
-    <button class="toggle-btn" id="logToggle">📋 Discrepancy log</button>
-    <button class="toggle-btn" id="parserReportToggle">🔍 Parser report (how each bill was read)</button>
     <button class="toggle-btn" id="screenshotToggle">📸 Screenshot mode</button>
+    <span id="slabStatus" class="toggle-btn" style="cursor:default;"></span>
   </div>
-  <div class="panel" id="masterPanel"></div>
-  <div class="panel" id="rulesPanel"></div>
-  <div class="panel" id="codesPanel"></div>
-  <div class="panel" id="logPanel"></div>
-  <div class="panel" id="parserReportPanel"></div>
 
   <div id="restoredNote"></div>
   <div class="zones">
@@ -564,6 +677,12 @@
       <div class="sub">Drop a whole day's bills at once — 50+ is fine</div>
       <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple>
     </div>
+    <div class="dropzone local-zone" id="localZone">
+      <div class="icon">🏪</div>
+      <div class="main">Drop LOCAL SALES bills here</div>
+      <div class="sub">No loading list — each line is checked against the rate slab only</div>
+      <input type="file" id="localInput" accept="application/pdf,.pdf" multiple>
+    </div>
   </div>
 
   <div class="excel-status" id="excelStatus"></div>
@@ -578,13 +697,16 @@
   <div id="results"></div>
   <button class="to-overview" id="toOverviewBtn" title="Back to the bill overview">↑ Overview</button>
 
+  </div><!-- /viewBills -->
+
   <footer>
     Bills are read inside this app, straight from the PDF text · bills are never uploaded and no AI is called.<br>
-    Only the item and party lists, rules and the audit log go to your Google Sheet. Bills and the rate sheet stay on this computer until you press "Clear all".<br>
+    Only the item, party and rate-slab lists, rules and the audit log go to your Google Sheet. Bills and the rate sheet stay on this computer until you press "Clear all".<br>
     <span id="footerNote"></span><br>
     <span id="footerVersion"></span>
   </footer>
 </div>
+</div><!-- /shell -->
 
 <script>
 // Load this branch's formulas, then the shared app — in that order (async=false keeps the order).

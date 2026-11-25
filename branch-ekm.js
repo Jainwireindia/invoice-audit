@@ -716,11 +716,7 @@ function computeRow(row){
   // rate-mismatch narration, so a screenshot alone explains the discrepancy
   let rateWarning = null;
   if(rateMismatch){
-    const diff = row.rate - expectedRate;
-    const pct = expectedRate !== 0 ? Math.abs(diff / expectedRate * 100) : 0;
-    rateWarning = diff > 0
-      ? `Billed ₹${fmt(row.rate)} vs expected ₹${fmt(expectedRate)} — over by ₹${fmt(Math.abs(diff))} (${pct.toFixed(1)}%)`
-      : `Billed ₹${fmt(row.rate)} vs expected ₹${fmt(expectedRate)} — short by ₹${fmt(Math.abs(diff))} (${pct.toFixed(1)}%)`;
+    rateWarning = gstRateWarning(row, expectedRate, rule.tax);
   }
 
   const itemMismatch = !!row.itemNameMismatch;
