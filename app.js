@@ -4,7 +4,12 @@
 // per browser/machine so an "updated" notice can be shown after an update (see
 // loadPersisted()). This is purely a tracking label — it has no effect on parsing
 // or matching logic.
-const APP_VERSION = 'v8.1';
+const APP_VERSION = 'v8.2';
+// The Invoice Audit Google Sheet — opened from "Sync & login", the sidebar and the master screens.
+// The sheet script also reports its own address on every sync, which takes over if it ever moves.
+const DEFAULT_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1R1vM0mbMXfcjk0cgz99r-IkSOwHPvW9cWZFx1dJHTSI/edit';
+function sheetUrl(){ return (typeof MASTER_ALL !== 'undefined' && MASTER_ALL && MASTER_ALL.sheetUrl) || DEFAULT_SHEET_URL; }
+function updateSheetLinks(){ document.querySelectorAll('[data-sheet-link]').forEach(a => { a.href = sheetUrl(); }); }
 // The branch's formulas (branch-ekm.js or branch-clt.js) are loaded just before this file.
 
 // Web build: Claude's window.storage doesn't exist on GitHub Pages, so this shim stores the same
@@ -2369,7 +2374,8 @@ async function fullSync(){
   try{
     await flushOutbox();
     const data = await api('pull');
-    MASTER_ALL = { at: data.at, user: data.user, displayName: data.displayName, role: data.role || 'admin', branches: data.branches || {}, slab: data.slab || [], slabSettings: data.slabSettings || null };
+    MASTER_ALL = { at: data.at, user: data.user, displayName: data.displayName, role: data.role || 'admin', branches: data.branches || {}, slab: data.slab || [], slabSettings: data.slabSettings || null, sheetUrl: data.sheetUrl || null };
+    updateSheetLinks();
     await idbSet('master', MASTER_ALL);
     const saved = syncSaved();
     if(data.displayName && saved.displayName !== data.displayName){ saved.displayName = data.displayName; localStorage.setItem(SYNC_KEY, JSON.stringify(saved)); }
@@ -2440,7 +2446,9 @@ function renderSyncPanel(msg, kind){
   const saved = syncSaved();
   const cfg = syncCfg();
   syncPanel.innerHTML = `<h3>Google Sheet sync</h3>
-    <p class="desc">The item lists, party lists, rules and the audit log live in one Google Sheet shared by every PC. The app syncs once each time it is opened (and whenever you press ⟳ Sync now), then keeps a copy in this browser, so it also works without internet. Bills and the rate sheet never leave this computer.</p>
+    <p class="desc">The item lists, party lists, rate slab, rules and the audit log live in one Google Sheet shared by every PC. The app syncs once each time it is opened (and whenever you press ⟳ Sync now), then keeps a copy in this browser, so it also works without internet. Bills and the rate sheet never leave this computer.</p>
+    <p style="margin:0 0 16px;"><a class="bar-btn primary" data-sheet-link href="${escapeHtml(sheetUrl())}" target="_blank" rel="noopener" style="text-decoration:none;display:inline-block;">📊 Open the Google Sheet</a>
+      <span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--ink-soft);margin-left:8px;">Users · Items · Parties · Rate Slab · Rules · Audit Log — opens in a new tab (needs access to the sheet)</span></p>
     <div class="sync-form">
       <label for="syncUrl">Web app URL</label><input id="syncUrl" placeholder="https://script.google.com/macros/s/…/exec" value="${escapeHtml(saved.url || '')}">
       <label for="syncUser">User name</label><input id="syncUser" autocomplete="username" value="${escapeHtml(saved.user || '')}">
@@ -2602,7 +2610,7 @@ function renderMasterPanel(){
   const admin = isAdmin();
   const list = def.list();
   const branchTxt = masterTab === 'slab' ? 'all branches' : (BRANCH.key === 'clt' ? 'Calicut · Kannur' : 'Ernakulam');
-  let html = `<h3>${def.label} <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink-soft);font-weight:400;">· ${branchTxt} · "${escapeHtml(def.sheet())}" tab · ${list.length} row${list.length === 1 ? '' : 's'}</span></h3>
+  let html = `<h3>${def.label} <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink-soft);font-weight:400;">· ${branchTxt} · "${escapeHtml(def.sheet())}" tab · <a data-sheet-link href="${escapeHtml(sheetUrl())}" target="_blank" rel="noopener" style="color:var(--gold);">open the sheet ↗</a> · ${list.length} row${list.length === 1 ? '' : 's'}</span></h3>
     <p class="desc">${def.desc()}</p>`;
   if(masterTab === 'slab') html += slabSettingsHtml(admin) + slabChecksHtml();
   html += `<div class="row pr-actions" style="gap:8px;flex-wrap:wrap;margin-bottom:10px;">
@@ -3537,6 +3545,7 @@ function copyBillImage(record, btn){
   try{ MASTER_ALL = (await idbGet('master')) || null; }catch(e){ MASTER_ALL = null; }
   lastRulesJson = rulesJsonNow();
   applyMasterAll(false);                         // last synced copy, until the sync below finishes
+  updateSheetLinks();
   await restoreSession();                        // yesterday's / this morning's work, if not cleared
   updateSyncStatus();
   initPwa();

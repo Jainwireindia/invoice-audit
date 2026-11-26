@@ -1,4 +1,7 @@
-# Invoice Audit v8.1
+# Invoice Audit v8.2
+
+v8.2: "📊 Open the Google Sheet" button on the Sync & login page, an "Open Google Sheet ↗" link in the sidebar, and a link on each master screen.
+
 
 One installable app for both branches (Ernakulam · Calicut/Kannur). It checks every sales bill in two ways:
 
