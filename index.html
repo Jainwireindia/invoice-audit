@@ -185,6 +185,14 @@
     padding: 18px 20px; margin-bottom: 22px; display: none;
   }
   .panel.open{ display:block; }
+  /* v8.3: App settings sub-tabs */
+  .set-tabs{ display: none; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0 0 12px; padding-bottom: 10px; border-bottom: 1px solid var(--rule-strong); }
+  body[data-view="sync"] .set-tabs, body[data-view="rules"] .set-tabs, body[data-view="codes"] .set-tabs, body[data-view="parser"] .set-tabs{ display: flex; }
+  .set-title{ font-family: 'Fraunces', serif; font-size: 18px; margin-right: 10px; }
+  .set-tab{ font: inherit; font-size: 13px; border: 1px solid var(--rule-strong); background: #fff; color: var(--ink); border-radius: 18px; padding: 6px 13px; cursor: pointer; text-decoration: none; }
+  .set-tab:hover{ border-color: var(--gold); }
+  .set-tab.active{ background: var(--gold); border-color: var(--gold); color: #fff; font-weight: 600; }
+  .set-tab[hidden]{ display: none; }
   .panel h3{ font-family:'Fraunces', serif; font-size:16px; margin: 0 0 4px; }
   .panel .desc{ font-size:12.5px; color: var(--ink-soft); margin: 0 0 14px; line-height:1.5; }
   .rule-row{
@@ -648,13 +656,9 @@
     <button type="button" class="nav-btn" data-view="parties"><span class="ni">👥</span><span class="nl">Party master</span><span class="nav-count" id="navParties"></span></button>
     <button type="button" class="nav-btn" data-view="slab"><span class="ni">💰</span><span class="nl">Rate slab</span><span class="nav-count" id="navSlab"></span></button>
     <div class="nav-sep"></div>
-    <button type="button" class="nav-btn" data-view="rules" id="rulesToggle"><span class="ni">⚙</span><span class="nl">Rules &amp; tolerances</span></button>
-    <button type="button" class="nav-btn" data-view="codes" id="codesToggle"><span class="ni">📖</span><span class="nl">Code reference</span></button>
     <button type="button" class="nav-btn" data-view="log" id="logToggle"><span class="ni">📋</span><span class="nl">Discrepancy log</span></button>
-    <button type="button" class="nav-btn" data-view="parser" id="parserReportToggle"><span class="ni">🔍</span><span class="nl">Parser report</span></button>
     <div class="nav-sep"></div>
-    <button type="button" class="nav-btn" data-view="sync" id="syncSettingsBtn"><span class="ni">☁</span><span class="nl">Sync &amp; login</span></button>
-    <a class="nav-btn" data-sheet-link href="https://docs.google.com/spreadsheets/d/1R1vM0mbMXfcjk0cgz99r-IkSOwHPvW9cWZFx1dJHTSI/edit" target="_blank" rel="noopener" style="text-decoration:none;" title="Opens the Invoice Audit Google Sheet in a new tab"><span class="ni">📊</span><span class="nl">Open Google Sheet ↗</span></a>
+    <button type="button" class="nav-btn" data-view="sync" data-settings-nav id="syncSettingsBtn"><span class="ni">⚙</span><span class="nl">App settings</span></button>
   </nav>
   <div class="side-foot" id="sideFoot"></div>
 </aside>
@@ -670,6 +674,14 @@
       <button type="button" class="bar-btn primary" id="installBtn" hidden>⬇ Install app</button>
       <button type="button" class="bar-btn" id="logoutBtn" title="Lock the app on this PC — the next person must log in">⏻ Log out</button>
     </div>
+  </div>
+  <div class="set-tabs" id="settingsTabs">
+    <span class="set-title">⚙ App settings</span>
+    <button type="button" class="set-tab" data-view="sync">☁ Sync &amp; login</button>
+    <button type="button" class="set-tab" data-view="rules" id="rulesToggle">⚙ Rules &amp; tolerances</button>
+    <button type="button" class="set-tab" data-view="codes" id="codesToggle">📖 Code reference</button>
+    <button type="button" class="set-tab" data-view="parser" id="parserReportToggle">🔍 Parser report</button>
+    <a class="set-tab" data-sheet-link href="https://docs.google.com/spreadsheets/d/1R1vM0mbMXfcjk0cgz99r-IkSOwHPvW9cWZFx1dJHTSI/edit" target="_blank" rel="noopener" title="Opens the Invoice Audit Google Sheet in a new tab">📊 Open Google Sheet ↗</a>
   </div>
   <div class="panel" id="syncPanel"></div>
   <div class="panel" id="masterPanel"></div>

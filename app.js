@@ -4,7 +4,7 @@
 // per browser/machine so an "updated" notice can be shown after an update (see
 // loadPersisted()). This is purely a tracking label — it has no effect on parsing
 // or matching logic.
-const APP_VERSION = 'v8.2';
+const APP_VERSION = 'v8.3';
 // The Invoice Audit Google Sheet — opened from "Sync & login", the sidebar and the master screens.
 // The sheet script also reports its own address on every sync, which takes over if it ever moves.
 const DEFAULT_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1R1vM0mbMXfcjk0cgz99r-IkSOwHPvW9cWZFx1dJHTSI/edit';
@@ -351,7 +351,9 @@ function setView(v){
     else if(v === 'parser') renderParserReportPanel();
     else if(v === 'sync') renderSyncPanel();
   }
-  document.querySelectorAll('.nav-btn[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === v));
+  const inSettings = ['sync', 'rules', 'codes', 'parser'].includes(v);
+  document.querySelectorAll('.nav-btn[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === v || (inSettings && b.hasAttribute('data-settings-nav'))));
+  document.querySelectorAll('.set-tab[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === v));
   window.scrollTo(0, 0);
 }
 // Older code opens a panel with openOnly(panel): routed to the matching view.
@@ -369,7 +371,7 @@ function openOnly(panel){
   setView(v);
   return true;
 }
-document.querySelectorAll('.nav-btn[data-view]').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
+document.querySelectorAll('.nav-btn[data-view], .set-tab[data-view]').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
 try{ if(localStorage.getItem('ia.tab') === 'local'){ currentView = 'local'; document.body.dataset.view = 'local'; document.querySelectorAll('.nav-btn[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === 'local')); } }catch(e){}
 document.getElementById('sideToggle').addEventListener('click', () => {
   const c = document.documentElement.classList.toggle('side-collapsed');
@@ -2596,7 +2598,44 @@ const MASTER_DEFS = {
     same: (a, b) => normalize(a.item) === normalize(b.item) && unitKey(a.unit) === unitKey(b.unit) && (a.from || '') === (b.from || ''),
   },
 };
-var masterSearch = '', masterEdit = null;   // masterEdit: { row (original or null), draft }
+var masterSearch = '', masterEdit = null;
+var masterSort = {}, masterFilter = {};   // v8.3: per master tab
+// v8.3: what each master can be filtered by, and how it can be sorted
+const MASTER_VIEW = {
+  items:   { fk: 'category', fl: 'Category', sorts: [['az','Name A → Z'],['za','Name Z → A'],['cat','Category, then name'],['code','Code A → Z'],['new','Newest first']] },
+  parties: { fk: 'place',    fl: 'Place',    sorts: [['az','Name A → Z'],['za','Name Z → A'],['cat','Place, then name'],['new','Newest first']] },
+  slab:    { fk: 'unit',     fl: 'Unit',     sorts: [['az','Item A → Z'],['za','Item Z → A'],['cat','Unit, then item'],['new','Newest first']] },
+};
+function masterNameOf(r){ return normalize(r.name || r.item || ''); }
+function masterFilterValues(){
+  const mv = MASTER_VIEW[masterTab], seen = new Map();
+  let blank = 0;
+  MASTER_DEFS[masterTab].list().forEach(r => {
+    const v = String(r[mv.fk] ?? '').trim();
+    if(!v){ blank++; return; }
+    const k = v.toLowerCase();
+    if(!seen.has(k)) seen.set(k, { v, n: 0 });
+    seen.get(k).n++;
+  });
+  return { vals: [...seen.values()].sort((a, b) => a.v.localeCompare(b.v)), blank };
+}
+function masterControlsHtml(){
+  const mv = MASTER_VIEW[masterTab]; if(!mv) return '';
+  const { vals, blank } = masterFilterValues(), cur = masterFilter[masterTab] || '', srt = masterSort[masterTab] || 'az';
+  const sel = 'font-size:12.5px;border:1px solid var(--rule-strong);border-radius:3px;padding:6px 8px;background:#fff;';
+  return `<label style="font-size:12px;color:var(--ink-soft);display:flex;align-items:center;gap:5px;">${mv.fl}
+      <select id="mFilter" style="${sel}"><option value="">All</option>${blank ? `<option value="__blank" ${cur === '__blank' ? 'selected' : ''}>— not set — (${blank})</option>` : ''}${vals.map(x => `<option value="${escapeHtml(x.v.toLowerCase())}" ${cur === x.v.toLowerCase() ? 'selected' : ''}>${escapeHtml(x.v)} (${x.n})</option>`).join('')}</select></label>
+    <label style="font-size:12px;color:var(--ink-soft);display:flex;align-items:center;gap:5px;">Sort
+      <select id="mSort" style="${sel}">${mv.sorts.map(([k, l]) => `<option value="${k}" ${srt === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`;
+}
+// Suggestions for the Category box: the app's own categories plus any already used.
+function categorySuggestions(){
+  const out = new Map();
+  const add = c => { c = String(c || '').trim(); if(c && !out.has(c.toLowerCase())) out.set(c.toLowerCase(), c); };
+  Object.keys(rules).forEach(k => add(rules[k].label));
+  MASTER_ALL.branches[BRANCH.key].items.forEach(r => add(r.category));
+  return [...out.values()].sort((a, b) => a.localeCompare(b));
+}   // masterEdit: { row (original or null), draft }
 function hdr(f){ return typeof f.h === 'function' ? f.h() : f.h; }
 
 function renderMasterPanel(){
@@ -2615,6 +2654,7 @@ function renderMasterPanel(){
   if(masterTab === 'slab') html += slabSettingsHtml(admin) + slabChecksHtml();
   html += `<div class="row pr-actions" style="gap:8px;flex-wrap:wrap;margin-bottom:10px;">
       <input type="text" id="mSearch" placeholder="Search…" value="${escapeHtml(masterSearch)}" style="flex:1;min-width:200px;font-family:'IBM Plex Mono',monospace;font-size:12.5px;border:1px solid var(--rule-strong);border-radius:3px;padding:7px 9px;">
+      ${masterControlsHtml()}
       ${admin ? `<button type="button" class="bar-btn primary" id="mAdd">＋ Add</button><button type="button" class="bar-btn" id="mPaste">📋 Paste from Excel</button>` : ''}
       <button type="button" class="bar-btn" id="mExport">⬇ Export (CSV)</button>
       ${masterTab === 'items' && admin && !list.length && branchBuiltInItems().length ? `<button type="button" class="bar-btn" id="mSeed">Fill with the built-in list (${branchBuiltInItems().length})</button>` : ''}
@@ -2629,6 +2669,9 @@ function renderMasterPanel(){
 
   const search = document.getElementById('mSearch');
   search.addEventListener('input', () => { masterSearch = search.value; renderMasterTable(); });
+  const mf = document.getElementById('mFilter'), ms = document.getElementById('mSort');
+  if(mf) mf.addEventListener('change', () => { masterFilter[masterTab] = mf.value; renderMasterTable(); });
+  if(ms) ms.addEventListener('change', () => { masterSort[masterTab] = ms.value; renderMasterTable(); });
   const on = (id, fn) => { const el = document.getElementById(id); if(el) el.addEventListener('click', fn); };
   on('mAdd', () => openMasterForm(null));
   on('mPaste', openPasteBox);
@@ -2654,8 +2697,18 @@ function renderMasterTable(){
   const admin = isAdmin();
   const q = masterSearch.trim().toLowerCase();
   const all = def.list().map((r, i) => ({ r, i }));
-  const list = all.filter(({ r }) => !q || def.fields.some(f => String(r[f.k] ?? '').toLowerCase().includes(q)));
-  if(masterTab === 'slab') list.sort((a, b) => normalize(a.r.item).localeCompare(normalize(b.r.item)) || (dateNum(a.r.from) || 0) - (dateNum(b.r.from) || 0));
+  const mv = MASTER_VIEW[masterTab], fv = masterFilter[masterTab] || '', srt = masterSort[masterTab] || 'az';
+  const list = all.filter(({ r }) => {
+    if(fv){ const v = String(r[mv.fk] ?? '').trim().toLowerCase(); if(fv === '__blank' ? v !== '' : v !== fv) return false; }
+    return !q || def.fields.some(f => String(r[f.k] ?? '').toLowerCase().includes(q));
+  });
+  const byName = (a, b) => masterNameOf(a.r).localeCompare(masterNameOf(b.r)) || (dateNum(a.r.from) || 0) - (dateNum(b.r.from) || 0);
+  const blankLast = (x, y) => (x ? 0 : 1) - (y ? 0 : 1) || String(x).toLowerCase().localeCompare(String(y).toLowerCase());
+  list.sort(srt === 'za' ? (a, b) => byName(b, a)
+    : srt === 'cat' ? (a, b) => blankLast(String(a.r[mv.fk] ?? '').trim(), String(b.r[mv.fk] ?? '').trim()) || byName(a, b)
+    : srt === 'code' ? (a, b) => blankLast(String(a.r.code ?? '').trim(), String(b.r.code ?? '').trim()) || byName(a, b)
+    : srt === 'new' ? (a, b) => b.i - a.i
+    : byName);
   const LIMIT = 500;
   const shown = list.slice(0, LIMIT);
   const cell = (f, r) => {
@@ -2695,7 +2748,8 @@ function renderMasterForm(){
   const d = masterEdit.draft;
   box.innerHTML = `<div class="sync-form" style="max-width:none;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));display:grid;gap:10px 14px;background:var(--paper-raised);border:1px solid var(--gold);border-radius:4px;padding:14px;margin-bottom:12px;">
     ${def.fields.filter(f => !f.ro).map(f => `<label style="display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:var(--ink-soft);${f.wide || f.req && !f.w ? 'grid-column:span 2;' : ''}">${escapeHtml(f.label || hdr(f))}${f.req ? ' *' : ''}
-      <input data-k="${f.k}" value="${escapeHtml(d[f.k] === null || d[f.k] === undefined ? '' : String(d[f.k]))}" placeholder="${f.placeholder ? escapeHtml(f.placeholder()) : ''}"></label>`).join('')}
+      <input data-k="${f.k}"${masterTab === 'items' && f.k === 'category' ? ' list="mCatList"' : ''} value="${escapeHtml(d[f.k] === null || d[f.k] === undefined ? '' : String(d[f.k]))}" placeholder="${f.placeholder ? escapeHtml(f.placeholder()) : ''}"></label>`).join('')}
+    ${masterTab === 'items' ? `<datalist id="mCatList">${categorySuggestions().map(c => `<option value="${escapeHtml(c)}">`).join('')}</datalist>` : ''}
     <div style="grid-column:1/-1;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
       <button type="button" class="bar-btn primary" id="mSave">${masterEdit.row ? 'Save changes' : 'Add'}</button>
       <button type="button" class="bar-btn" id="mCancel">Cancel</button>
