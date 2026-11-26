@@ -187,12 +187,20 @@
   .panel.open{ display:block; }
   /* v8.3: App settings sub-tabs */
   .set-tabs{ display: none; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0 0 12px; padding-bottom: 10px; border-bottom: 1px solid var(--rule-strong); }
-  body[data-view="sync"] .set-tabs, body[data-view="rules"] .set-tabs, body[data-view="codes"] .set-tabs, body[data-view="parser"] .set-tabs{ display: flex; }
+  body[data-view="sync"] .set-tabs, body[data-view="itemcats"] .set-tabs, body[data-view="rules"] .set-tabs, body[data-view="codes"] .set-tabs, body[data-view="parser"] .set-tabs{ display: flex; }
   .set-title{ font-family: 'Fraunces', serif; font-size: 18px; margin-right: 10px; }
   .set-tab{ font: inherit; font-size: 13px; border: 1px solid var(--rule-strong); background: #fff; color: var(--ink); border-radius: 18px; padding: 6px 13px; cursor: pointer; text-decoration: none; }
   .set-tab:hover{ border-color: var(--gold); }
   .set-tab.active{ background: var(--gold); border-color: var(--gold); color: #fff; font-weight: 600; }
   .set-tab[hidden]{ display: none; }
+  .need-tag{ display: inline-block; margin-top: 3px; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--red); background: rgba(180,40,40,.07); border: 1px solid rgba(180,40,40,.25); border-radius: 3px; padding: 1px 5px; white-space: normal; }
+  .nav-count .nc-need{ color: #FFB4A8; font-weight: 600; opacity: 1; }
+  .ic-list{ list-style: none; margin: 0; padding: 0; max-width: 620px; }
+  .ic-list li{ display: flex; align-items: center; gap: 10px; padding: 7px 10px; border: 1px solid var(--rule); border-radius: 4px; margin-bottom: 6px; background: #fff; }
+  .ic-list .ic-n{ font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--ink-soft); width: 22px; }
+  .ic-list .ic-name{ flex: 1; font-weight: 600; }
+  .ic-list .ic-count{ font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--ink-soft); }
+  .ic-list li.ic-new{ border-style: dashed; }
   .panel h3{ font-family:'Fraunces', serif; font-size:16px; margin: 0 0 4px; }
   .panel .desc{ font-size:12.5px; color: var(--ink-soft); margin: 0 0 14px; line-height:1.5; }
   .rule-row{
@@ -678,12 +686,14 @@
   <div class="set-tabs" id="settingsTabs">
     <span class="set-title">⚙ App settings</span>
     <button type="button" class="set-tab" data-view="sync">☁ Sync &amp; login</button>
+    <button type="button" class="set-tab" data-view="itemcats">🗂 Item categories</button>
     <button type="button" class="set-tab" data-view="rules" id="rulesToggle">⚙ Rules &amp; tolerances</button>
     <button type="button" class="set-tab" data-view="codes" id="codesToggle">📖 Code reference</button>
     <button type="button" class="set-tab" data-view="parser" id="parserReportToggle">🔍 Parser report</button>
     <a class="set-tab" data-sheet-link href="https://docs.google.com/spreadsheets/d/1R1vM0mbMXfcjk0cgz99r-IkSOwHPvW9cWZFx1dJHTSI/edit" target="_blank" rel="noopener" title="Opens the Invoice Audit Google Sheet in a new tab">📊 Open Google Sheet ↗</a>
   </div>
   <div class="panel" id="syncPanel"></div>
+  <div class="panel" id="itemCatPanel"></div>
   <div class="panel" id="masterPanel"></div>
   <div class="panel" id="rulesPanel"></div>
   <div class="panel" id="codesPanel"></div>

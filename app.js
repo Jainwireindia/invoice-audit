@@ -4,9 +4,12 @@
 // per browser/machine so an "updated" notice can be shown after an update (see
 // loadPersisted()). This is purely a tracking label — it has no effect on parsing
 // or matching logic.
-const APP_VERSION = 'v8.3';
+const APP_VERSION = 'v8.5';
 // The Invoice Audit Google Sheet — opened from "Sync & login", the sidebar and the master screens.
 // The sheet script also reports its own address on every sync, which takes over if it ever moves.
+// v8.3: the company's Apps Script web app is built in — nobody has to paste it. (Redeploy with
+// Manage deployments → ✎ → New version so this address stays the same.)
+const DEFAULT_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyLhcyswGUxwwlv9NeXs8ZoAJAKMjyvpBD3OdMkfprhem1qjpFl3xRVInl406soekw-/exec';
 const DEFAULT_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1R1vM0mbMXfcjk0cgz99r-IkSOwHPvW9cWZFx1dJHTSI/edit';
 function sheetUrl(){ return (typeof MASTER_ALL !== 'undefined' && MASTER_ALL && MASTER_ALL.sheetUrl) || DEFAULT_SHEET_URL; }
 function updateSheetLinks(){ document.querySelectorAll('[data-sheet-link]').forEach(a => { a.href = sheetUrl(); }); }
@@ -333,13 +336,13 @@ function normalize(s){
 }
 // v8: the ☰ sidebar picks one view at a time — "Check bills" or one of the masters / panels.
 var currentView = 'bills';
-const VIEW_PANELS = { items: 'masterPanel', parties: 'masterPanel', slab: 'masterPanel', rules: 'rulesPanel', codes: 'codesPanel', log: 'logPanel', parser: 'parserReportPanel', sync: 'syncPanel' };
+const VIEW_PANELS = { items: 'masterPanel', parties: 'masterPanel', slab: 'masterPanel', itemcats: 'itemCatPanel', rules: 'rulesPanel', codes: 'codesPanel', log: 'logPanel', parser: 'parserReportPanel', sync: 'syncPanel' };
 function setView(v){
   if(!VIEW_PANELS[v] && v !== 'local') v = 'bills';
   const tabChanged = (v === 'bills' || v === 'local') && v !== currentView;
   currentView = v;
   document.body.dataset.view = v;
-  [masterPanel, rulesPanel, codesPanel, logPanel, parserReportPanel, syncPanel].forEach(p => p.classList.remove('open'));
+  [masterPanel, rulesPanel, codesPanel, logPanel, parserReportPanel, syncPanel, document.getElementById('itemCatPanel')].forEach(p => p.classList.remove('open'));
   if(v === 'bills' || v === 'local'){
     try{ localStorage.setItem('ia.tab', v); }catch(e){}
     applyTabTexts();
@@ -350,8 +353,9 @@ function setView(v){
     else if(v === 'log') renderLogPanel();
     else if(v === 'parser') renderParserReportPanel();
     else if(v === 'sync') renderSyncPanel();
+    else if(v === 'itemcats') renderItemCatPanel();
   }
-  const inSettings = ['sync', 'rules', 'codes', 'parser'].includes(v);
+  const inSettings = ['sync', 'itemcats', 'rules', 'codes', 'parser'].includes(v);
   document.querySelectorAll('.nav-btn[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === v || (inSettings && b.hasAttribute('data-settings-nav'))));
   document.querySelectorAll('.set-tab[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === v));
   window.scrollTo(0, 0);
@@ -2245,7 +2249,11 @@ var outbox = [];            // rules and log rows waiting to be sent (kept acros
 var lastRulesJson = null;   // this branch's rules as last saved/received — a change is sent to the sheet
 var flushing = false, flushTimer = null;
 
-function syncSaved(){ try{ return JSON.parse(localStorage.getItem(SYNC_KEY) || 'null') || {}; }catch(e){ return {}; } }
+function syncSaved(){
+  let c; try{ c = JSON.parse(localStorage.getItem(SYNC_KEY) || 'null') || {}; }catch(e){ c = {}; }
+  if(!c.custom || !c.url) c.url = DEFAULT_SCRIPT_URL;   // built-in address unless an admin set another one
+  return c;
+}
 function syncCfg(){ const c = syncSaved(); return c.url && c.user && c.hash ? c : null; }
 async function sha256Hex(text){
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
@@ -2376,7 +2384,7 @@ async function fullSync(){
   try{
     await flushOutbox();
     const data = await api('pull');
-    MASTER_ALL = { at: data.at, user: data.user, displayName: data.displayName, role: data.role || 'admin', branches: data.branches || {}, slab: data.slab || [], slabSettings: data.slabSettings || null, sheetUrl: data.sheetUrl || null };
+    MASTER_ALL = { at: data.at, user: data.user, displayName: data.displayName, role: data.role || 'admin', branches: data.branches || {}, slab: data.slab || [], slabSettings: data.slabSettings || null, appSettings: data.appSettings || {}, sheetUrl: data.sheetUrl || null };
     updateSheetLinks();
     await idbSet('master', MASTER_ALL);
     const saved = syncSaved();
@@ -2452,7 +2460,6 @@ function renderSyncPanel(msg, kind){
     <p style="margin:0 0 16px;"><a class="bar-btn primary" data-sheet-link href="${escapeHtml(sheetUrl())}" target="_blank" rel="noopener" style="text-decoration:none;display:inline-block;">📊 Open the Google Sheet</a>
       <span style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--ink-soft);margin-left:8px;">Users · Items · Parties · Rate Slab · Rules · Audit Log — opens in a new tab (needs access to the sheet)</span></p>
     <div class="sync-form">
-      <label for="syncUrl">Web app URL</label><input id="syncUrl" placeholder="https://script.google.com/macros/s/…/exec" value="${escapeHtml(saved.url || '')}">
       <label for="syncUser">User name</label><input id="syncUser" autocomplete="username" value="${escapeHtml(saved.user || '')}">
       <label for="syncPass">Password</label><input id="syncPass" type="password" autocomplete="current-password" placeholder="${cfg ? '(saved — type only to change)' : ''}">
       <div class="actions">
@@ -2460,6 +2467,11 @@ function renderSyncPanel(msg, kind){
         ${cfg ? '<button type="button" class="bar-btn" id="syncLogoutBtn">Log out of this browser</button>' : ''}
       </div>
     </div>
+    <details style="margin-top:14px;font-size:12px;color:var(--ink-soft);"><summary style="cursor:pointer;">Advanced — sheet connection</summary>
+      <p style="margin:8px 0;">The company sheet's address is built into the app, so nobody has to enter it. Change it only if the Apps Script was deployed as a brand-new deployment (a new address).</p>
+      <div class="sync-form"><label for="syncUrl">Web app URL</label><input id="syncUrl" value="${escapeHtml(saved.url)}">
+        <div class="actions"><button type="button" class="bar-btn" id="syncUrlReset">Use the built-in address</button></div></div>
+    </details>
     <div class="sync-msg ${kind || ''}" id="syncMsg">${msg ? escapeHtml(msg) : (syncState.lastError ? '⚠ ' + escapeHtml(syncState.lastError) : '')}</div>`;
   const msgEl = document.getElementById('syncMsg');
   document.getElementById('syncLoginBtn').addEventListener('click', async () => {
@@ -2482,6 +2494,7 @@ function renderSyncPanel(msg, kind){
       msgEl.className = 'sync-msg bad'; msgEl.textContent = '⚠ ' + e.message;
     }
   });
+  document.getElementById('syncUrlReset').addEventListener('click', () => { document.getElementById('syncUrl').value = DEFAULT_SCRIPT_URL; });
   const lo = document.getElementById('syncLogoutBtn');
   if(lo) lo.addEventListener('click', () => logOut());
 }
@@ -2492,14 +2505,14 @@ function renderSyncPanel(msg, kind){
 // (password changed / user switched off), which locks it again at the next sync.
 async function loginWith(url, user, hash){
   const r = await api('login', {}, { url, user, hash });
-  localStorage.setItem(SYNC_KEY, JSON.stringify({ url, user, hash, displayName: r.displayName || user }));
+  localStorage.setItem(SYNC_KEY, JSON.stringify({ url, custom: url !== DEFAULT_SCRIPT_URL, user, hash, displayName: r.displayName || user }));
   return r;
 }
 function lockApp(message){
   const saved = syncSaved();
-  localStorage.setItem(SYNC_KEY, JSON.stringify({ url: saved.url || '', user: saved.user || '' }));
+  localStorage.setItem(SYNC_KEY, JSON.stringify({ url: saved.url || '', custom: !!saved.custom, user: saved.user || '' }));
   saveSessionNow();
-  [masterPanel, rulesPanel, codesPanel, logPanel, parserReportPanel, syncPanel].forEach(p => p.classList.remove('open'));
+  [masterPanel, rulesPanel, codesPanel, logPanel, parserReportPanel, syncPanel, document.getElementById('itemCatPanel')].forEach(p => p.classList.remove('open'));
   document.documentElement.classList.add('locked');
   renderLockScreen(message || '', message ? 'bad' : '');
 }
@@ -2512,8 +2525,8 @@ function logOut(){
 function renderLockScreen(msg, kind){
   const saved = syncSaved();
   const urlBox = document.getElementById('lockUrlBox'), urlNote = document.getElementById('lockUrlNote');
-  const hasUrl = !!saved.url;
-  urlBox.hidden = hasUrl; urlNote.hidden = !hasUrl;
+  const hasUrl = true;   // v8.3: built in
+  urlBox.hidden = true; urlNote.hidden = true;
   document.getElementById('lockUrl').value = saved.url || '';
   if(saved.user && !document.getElementById('lockUser').value) document.getElementById('lockUser').value = saved.user;
   document.getElementById('lockPass').value = '';
@@ -2564,7 +2577,7 @@ const MASTER_DEFS = {
     desc: () => `This branch's Tally stock items. A bill line whose Tally name (or an old name under "Other codes / spellings") is here is paired with the ${BRANCH.key === 'ekm' ? 'rate-sheet' : 'loading-plan'} row carrying one of its codes, and takes its category, size${BRANCH.key === 'ekm' ? ', bundle weight' : ''} and GST % from here. Lines confirmed on checked bills are added automatically (Source = learned).`,
     fields: [
       { k: 'code', h: 'Code', w: 140 }, { k: 'name', h: 'Tally stock item name', req: true },
-      { k: 'category', h: 'Category', w: 100 }, { k: 'unit', h: 'Unit', w: 64 },
+      { k: 'group', h: 'Item category', w: 120 }, { k: 'category', h: 'Category', label: 'Rate category', w: 110 }, { k: 'unit', h: 'Unit', w: 64 },
       { k: 'ht', h: 'Ht ft', w: 52, num: true }, { k: 'len', h: 'Len ft', w: 52, num: true },
       { k: 'bundleKg', h: 'Bundle kg', w: 64, num: true }, { k: 'gst', h: 'GST %', w: 52, num: true },
       { k: 'other', h: 'Other codes / spellings', wide: true }, { k: 'source', h: 'Source', w: 120, ro: true }],
@@ -2599,43 +2612,136 @@ const MASTER_DEFS = {
   },
 };
 var masterSearch = '', masterEdit = null;
-var masterSort = {}, masterFilter = {};   // v8.3: per master tab
-// v8.3: what each master can be filtered by, and how it can be sorted
+var masterSort = {}, masterFilter = {}, masterAttention = {};   // per master tab
+// What each master can be filtered by, and how it can be sorted.
 const MASTER_VIEW = {
-  items:   { fk: 'category', fl: 'Category', sorts: [['az','Name A → Z'],['za','Name Z → A'],['cat','Category, then name'],['code','Code A → Z'],['new','Newest first']] },
-  parties: { fk: 'place',    fl: 'Place',    sorts: [['az','Name A → Z'],['za','Name Z → A'],['cat','Place, then name'],['new','Newest first']] },
-  slab:    { fk: 'unit',     fl: 'Unit',     sorts: [['az','Item A → Z'],['za','Item Z → A'],['cat','Unit, then item'],['new','Newest first']] },
+  items:   { filters: [['group', 'Item category'], ['category', 'Rate category']],
+             sorts: [['grp', 'Item category (my order)'], ['az', 'Name A → Z'], ['za', 'Name Z → A'], ['cat', 'Rate category'], ['code', 'Code A → Z'], ['new', 'Newest first']] },
+  parties: { filters: [['place', 'Place']], sorts: [['az', 'Name A → Z'], ['za', 'Name Z → A'], ['cat', 'Place, then name'], ['new', 'Newest first']] },
+  slab:    { filters: [['unit', 'Unit']],   sorts: [['az', 'Item A → Z'], ['za', 'Item Z → A'], ['cat', 'Unit, then item'], ['new', 'Newest first']] },
 };
 function masterNameOf(r){ return normalize(r.name || r.item || ''); }
-function masterFilterValues(){
-  const mv = MASTER_VIEW[masterTab], seen = new Map();
+function defaultSort(tab){ return tab === 'items' ? 'grp' : 'az'; }
+function masterFilterValues(fk){
+  const seen = new Map();
   let blank = 0;
   MASTER_DEFS[masterTab].list().forEach(r => {
-    const v = String(r[mv.fk] ?? '').trim();
+    const v = String(r[fk] ?? '').trim();
     if(!v){ blank++; return; }
     const k = v.toLowerCase();
     if(!seen.has(k)) seen.set(k, { v, n: 0 });
     seen.get(k).n++;
   });
-  return { vals: [...seen.values()].sort((a, b) => a.v.localeCompare(b.v)), blank };
+  let vals = [...seen.values()];
+  if(fk === 'group'){ const pos = itemCatPos(); vals.sort((a, b) => pos(a.v) - pos(b.v) || a.v.localeCompare(b.v)); }
+  else vals.sort((a, b) => a.v.localeCompare(b.v));
+  return { vals, blank };
 }
 function masterControlsHtml(){
   const mv = MASTER_VIEW[masterTab]; if(!mv) return '';
-  const { vals, blank } = masterFilterValues(), cur = masterFilter[masterTab] || '', srt = masterSort[masterTab] || 'az';
-  const sel = 'font-size:12.5px;border:1px solid var(--rule-strong);border-radius:3px;padding:6px 8px;background:#fff;';
-  return `<label style="font-size:12px;color:var(--ink-soft);display:flex;align-items:center;gap:5px;">${mv.fl}
-      <select id="mFilter" style="${sel}"><option value="">All</option>${blank ? `<option value="__blank" ${cur === '__blank' ? 'selected' : ''}>— not set — (${blank})</option>` : ''}${vals.map(x => `<option value="${escapeHtml(x.v.toLowerCase())}" ${cur === x.v.toLowerCase() ? 'selected' : ''}>${escapeHtml(x.v)} (${x.n})</option>`).join('')}</select></label>
-    <label style="font-size:12px;color:var(--ink-soft);display:flex;align-items:center;gap:5px;">Sort
-      <select id="mSort" style="${sel}">${mv.sorts.map(([k, l]) => `<option value="${k}" ${srt === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`;
+  const cf = masterFilter[masterTab] || {}, srt = masterSort[masterTab] || defaultSort(masterTab);
+  const sel = 'font-size:12.5px;border:1px solid var(--rule-strong);border-radius:3px;padding:6px 8px;background:#fff;max-width:230px;';
+  const need = masterTab === 'parties' ? 0 : def_needCount();
+  return mv.filters.map(([fk, fl]) => {
+    const { vals, blank } = masterFilterValues(fk), cur = cf[fk] || '';
+    return `<label style="font-size:12px;color:var(--ink-soft);display:flex;align-items:center;gap:5px;">${fl}
+      <select data-mfilter="${fk}" style="${sel}"><option value="">All</option>${blank ? `<option value="__blank" ${cur === '__blank' ? 'selected' : ''}>— not set — (${blank})</option>` : ''}${vals.map(x => `<option value="${escapeHtml(x.v.toLowerCase())}" ${cur === x.v.toLowerCase() ? 'selected' : ''}>${escapeHtml(x.v)} (${x.n})</option>`).join('')}</select></label>`;
+  }).join('') + `<label style="font-size:12px;color:var(--ink-soft);display:flex;align-items:center;gap:5px;">Sort
+      <select id="mSort" style="${sel}">${mv.sorts.map(([k, l]) => `<option value="${k}" ${srt === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`
+    + (masterTab === 'parties' ? '' : `<button type="button" class="bar-btn${masterAttention[masterTab] ? ' primary' : ''}" id="mNeed" title="Show only the rows that are missing something the checks need" ${need || masterAttention[masterTab] ? '' : 'disabled'}>⚠ Needs attention (${need})</button>`);
 }
-// Suggestions for the Category box: the app's own categories plus any already used.
+// Suggestions for the Rate category box: the app's own pricing categories plus any already used.
 function categorySuggestions(){
   const out = new Map();
   const add = c => { c = String(c || '').trim(); if(c && !out.has(c.toLowerCase())) out.set(c.toLowerCase(), c); };
   Object.keys(rules).forEach(k => add(rules[k].label));
   MASTER_ALL.branches[BRANCH.key].items.forEach(r => add(r.category));
   return [...out.values()].sort((a, b) => a.localeCompare(b));
-}   // masterEdit: { row (original or null), draft }
+}
+// ---- Item categories (product groups such as Sheet weldmesh, Roll weldmesh, Chainlink) ------------
+// Their display order is set in App settings → Item categories and kept in the sheet's Rules tab.
+function appSettings(){ if(!MASTER_ALL.appSettings) MASTER_ALL.appSettings = {}; return MASTER_ALL.appSettings; }
+function itemCatOrder(){ const o = (appSettings().itemCatOrder || {})[BRANCH.key]; return Array.isArray(o) ? o : []; }
+function itemCatPos(){
+  const m = new Map(itemCatOrder().map((c, i) => [String(c).trim().toLowerCase(), i]));
+  return v => { v = String(v || '').trim().toLowerCase(); return !v ? 1e9 : m.has(v) ? m.get(v) : 1e6; };
+}
+function itemCatSuggestions(){
+  const out = new Map();
+  const add = c => { c = String(c || '').trim(); if(c && !out.has(c.toLowerCase())) out.set(c.toLowerCase(), c); };
+  itemCatOrder().forEach(add);
+  MASTER_ALL.branches[BRANCH.key].items.forEach(r => add(r.group));
+  return [...out.values()];
+}
+// App settings → Item categories: the order items are listed in (Item master, sorted by item category).
+var icDraft = null;
+function renderItemCatPanel(msg, kind){
+  const panel = document.getElementById('itemCatPanel');
+  if(!MASTER_ALL || !MASTER_ALL.branches || !MASTER_ALL.branches[BRANCH.key]){ panel.innerHTML = '<h3>Item categories</h3><p class="desc">Not synced with the Google Sheet yet.</p>'; return; }
+  const admin = isAdmin(), items = MASTER_ALL.branches[BRANCH.key].items;
+  if(!icDraft || icDraft.branch !== BRANCH.key) icDraft = { branch: BRANCH.key, list: itemCatSuggestions(), dirty: false };
+  const count = c => items.filter(r => String(r.group || '').trim().toLowerCase() === c.toLowerCase()).length;
+  const unset = items.filter(r => !String(r.group || '').trim()).length;
+  const saved = itemCatOrder().map(c => c.toLowerCase());
+  panel.innerHTML = `<h3>Item categories <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink-soft);font-weight:400;">· ${BRANCH.key === 'clt' ? 'Calicut · Kannur' : 'Ernakulam'}</span></h3>
+    <p class="desc">Your own product groups (e.g. Sheet weldmesh, Roll weldmesh, Chainlink). The Item master lists items in this order when sorted by "Item category (my order)". This is separate from the <b>rate category</b>, which decides the pricing formula. Give items a category with ✎ in the Item master, or filter/search there and use "🏷 Set item category for shown".</p>
+    <ol class="ic-list">${icDraft.list.map((c, i) => `<li${saved.includes(c.toLowerCase()) ? '' : ' class="ic-new"'}><span class="ic-n">${i + 1}</span><span class="ic-name">${escapeHtml(c)}</span><span class="ic-count">${count(c)} item${count(c) === 1 ? '' : 's'}</span>
+      ${admin ? `<button type="button" class="fill-btn" data-ic="up" data-i="${i}" ${i ? '' : 'disabled'} title="Move up">↑</button><button type="button" class="fill-btn" data-ic="down" data-i="${i}" ${i < icDraft.list.length - 1 ? '' : 'disabled'} title="Move down">↓</button><button type="button" class="fill-btn" data-ic="del" data-i="${i}" ${count(c) ? 'disabled title="Still used by items — change those items first"' : 'title="Remove"'}>🗑</button>` : ''}</li>`).join('')
+      || '<li style="color:var(--ink-soft);">No item categories yet — add the first one below.</li>'}
+      ${unset ? `<li style="background:transparent;color:var(--ink-soft);"><span class="ic-n">—</span><span class="ic-name" style="font-weight:400;">Not set yet (always listed last)</span><span class="ic-count">${unset} items</span></li>` : ''}</ol>
+    ${admin ? `<div class="row" style="gap:8px;margin:12px 0;flex-wrap:wrap;">
+      <input id="icNew" placeholder="New item category, e.g. Sheet weldmesh" style="min-width:260px;font-size:13px;border:1px solid var(--rule-strong);border-radius:3px;padding:7px 9px;">
+      <button type="button" class="bar-btn" id="icAdd">＋ Add</button>
+      <button type="button" class="bar-btn primary" id="icSave" ${icDraft.dirty ? '' : 'disabled'}>Save order</button>
+      ${icDraft.dirty ? '<button type="button" class="bar-btn" id="icUndo">Undo changes</button>' : ''}</div>` : '<p class="master-note">Only an admin can change the order.</p>'}
+    <div class="sync-msg ${kind || ''}">${msg ? escapeHtml(msg) : ''}</div>`;
+  panel.querySelectorAll('[data-ic]').forEach(b => b.addEventListener('click', () => {
+    const i = +b.dataset.i, L = icDraft.list;
+    if(b.dataset.ic === 'up' && i > 0) [L[i - 1], L[i]] = [L[i], L[i - 1]];
+    else if(b.dataset.ic === 'down' && i < L.length - 1) [L[i + 1], L[i]] = [L[i], L[i + 1]];
+    else if(b.dataset.ic === 'del') L.splice(i, 1);
+    icDraft.dirty = true; renderItemCatPanel();
+  }));
+  const add = () => {
+    const inp = document.getElementById('icNew'), v = inp.value.trim().replace(/\s+/g, ' ');
+    if(!v) return;
+    if(icDraft.list.some(c => c.toLowerCase() === v.toLowerCase())){ renderItemCatPanel(`"${v}" is already in the list.`, 'bad'); return; }
+    icDraft.list.push(v); icDraft.dirty = true; renderItemCatPanel();
+    setTimeout(() => { const n = document.getElementById('icNew'); if(n) n.focus(); }, 0);
+  };
+  const ab = document.getElementById('icAdd'); if(ab) ab.addEventListener('click', add);
+  const ni = document.getElementById('icNew'); if(ni) ni.addEventListener('keydown', e => { if(e.key === 'Enter') add(); });
+  const ub = document.getElementById('icUndo'); if(ub) ub.addEventListener('click', () => { icDraft = null; renderItemCatPanel(); });
+  const sb = document.getElementById('icSave'); if(sb) sb.addEventListener('click', () => {
+    const st = appSettings();
+    st.itemCatOrder = Object.assign({}, st.itemCatOrder, { [BRANCH.key]: icDraft.list.slice() });
+    queueOutbox({ type: 'rules', branch: 'app', rules: st });
+    idbSet('master', MASTER_ALL);
+    icDraft = null;
+    renderItemCatPanel('✓ Saved — sending to the Google Sheet.', 'ok');
+  });
+}
+// ---- Needs attention: details a row is missing that the checks rely on --------------------------
+function masterNeeds(tab, r){
+  const out = [];
+  if(tab === 'items'){
+    if(!String(r.group || '').trim()) out.push('no item category');
+    if(!String(r.category || '').trim()) out.push('no rate category');
+    if(!String(r.unit || '').trim()) out.push('no unit');
+    if(r.gst === null || r.gst === undefined || r.gst === '') out.push('no GST %');
+    const k = mapMasterCategory(r.category, r.unit), keys = BRANCH.categoryKeys || {};
+    if(k && (k === keys.sheet || k === keys.roll) && !(r.ht > 0)) out.push('no height');
+    if(k && k === keys.sheet && !(r.len > 0)) out.push('no length');
+  }else if(tab === 'slab'){
+    const n = nameKey(r.item);
+    const it = ['ekm', 'clt'].map(b => ((MASTER_ALL.branches[b] || {}).items || []).find(x => nameKey(x.name) === n)).find(Boolean);
+    if(!it) out.push('not found in an item master — check the Tally name');
+    if((r.gst === null || r.gst === undefined || r.gst === '') && !(it && it.gst !== null && it.gst !== undefined && it.gst !== '')) out.push('no GST %');
+  }
+  return out;
+}
+function def_needCount(){ return MASTER_DEFS[masterTab].list().filter(r => masterNeeds(masterTab, r).length).length; }
+// masterEdit: { row (original or null), draft }
 function hdr(f){ return typeof f.h === 'function' ? f.h() : f.h; }
 
 function renderMasterPanel(){
@@ -2655,6 +2761,7 @@ function renderMasterPanel(){
   html += `<div class="row pr-actions" style="gap:8px;flex-wrap:wrap;margin-bottom:10px;">
       <input type="text" id="mSearch" placeholder="Search…" value="${escapeHtml(masterSearch)}" style="flex:1;min-width:200px;font-family:'IBM Plex Mono',monospace;font-size:12.5px;border:1px solid var(--rule-strong);border-radius:3px;padding:7px 9px;">
       ${masterControlsHtml()}
+      ${admin && masterTab === 'items' ? `<button type="button" class="bar-btn" id="mBulkGroup" title="Give every item now on screen (after search / filters) the same item category">🏷 Set item category for shown</button>` : ''}
       ${admin ? `<button type="button" class="bar-btn primary" id="mAdd">＋ Add</button><button type="button" class="bar-btn" id="mPaste">📋 Paste from Excel</button>` : ''}
       <button type="button" class="bar-btn" id="mExport">⬇ Export (CSV)</button>
       ${masterTab === 'items' && admin && !list.length && branchBuiltInItems().length ? `<button type="button" class="bar-btn" id="mSeed">Fill with the built-in list (${branchBuiltInItems().length})</button>` : ''}
@@ -2669,11 +2776,15 @@ function renderMasterPanel(){
 
   const search = document.getElementById('mSearch');
   search.addEventListener('input', () => { masterSearch = search.value; renderMasterTable(); });
-  const mf = document.getElementById('mFilter'), ms = document.getElementById('mSort');
-  if(mf) mf.addEventListener('change', () => { masterFilter[masterTab] = mf.value; renderMasterTable(); });
+  masterPanel.querySelectorAll('select[data-mfilter]').forEach(sel => sel.addEventListener('change', () => {
+    masterFilter[masterTab] = Object.assign({}, masterFilter[masterTab], { [sel.dataset.mfilter]: sel.value }); renderMasterTable(); }));
+  const ms = document.getElementById('mSort');
   if(ms) ms.addEventListener('change', () => { masterSort[masterTab] = ms.value; renderMasterTable(); });
+
   const on = (id, fn) => { const el = document.getElementById(id); if(el) el.addEventListener('click', fn); };
   on('mAdd', () => openMasterForm(null));
+  on('mNeed', () => { masterAttention[masterTab] = !masterAttention[masterTab]; renderMasterPanel(); });
+  on('mBulkGroup', bulkSetItemCategory);
   on('mPaste', openPasteBox);
   on('mExport', exportMaster);
   on('mRematch', rematchOpenBills);
@@ -2691,21 +2802,50 @@ function renderMasterPanel(){
   renderMasterTable();
   if(masterEdit) renderMasterForm();
 }
+// The rows the current search, filters and "Needs attention" leave on screen.
+function masterShownRows(all){
+  const def = MASTER_DEFS[masterTab], q = masterSearch.trim().toLowerCase(), cf = masterFilter[masterTab] || {};
+  all = all || def.list().map((r, i) => ({ r, i }));
+  return all.filter(({ r }) => {
+    for(const fk of Object.keys(cf)){
+      const fv = cf[fk]; if(!fv) continue;
+      const v = String(r[fk] ?? '').trim().toLowerCase();
+      if(fv === '__blank' ? v !== '' : v !== fv) return false;
+    }
+    if(masterAttention[masterTab] && !masterNeeds(masterTab, r).length) return false;
+    return !q || def.fields.some(f => String(r[f.k] ?? '').toLowerCase().includes(q));
+  });
+}
+// Item master: give every row now on screen the same item category (one save to the sheet).
+function bulkSetItemCategory(){
+  const shown = masterShownRows();
+  if(!shown.length) return;
+  const cats = itemCatSuggestions();
+  const v = prompt(`Item category for the ${shown.length} item${shown.length === 1 ? '' : 's'} now shown${cats.length ? '\n\nExisting: ' + cats.join(' · ') : ''}\n\n(Leave blank to clear it.)`, '');
+  if(v === null) return;
+  const val = (cats.find(c => c.toLowerCase() === v.trim().toLowerCase()) || v.trim());
+  if(!confirm(`Set the item category of ${shown.length} item${shown.length === 1 ? '' : 's'} to "${val || '(blank)'}"?`)) return;
+  const def = MASTER_DEFS.items, rows = [];
+  shown.forEach(({ r }) => { rows.push({ match: def.key(r), values: { 'Item category': val } }); r.group = val; });
+  for(let i = 0; i < rows.length; i += 200) queueOutbox({ type: 'rows', tab: def.tab(), rows: rows.slice(i, i + 200) });
+  afterMasterChange();
+  renderMasterPanel();
+}
 function renderMasterTable(){
   const def = MASTER_DEFS[masterTab], table = document.getElementById('mTable');
   if(!table) return;
   const admin = isAdmin();
   const q = masterSearch.trim().toLowerCase();
   const all = def.list().map((r, i) => ({ r, i }));
-  const mv = MASTER_VIEW[masterTab], fv = masterFilter[masterTab] || '', srt = masterSort[masterTab] || 'az';
-  const list = all.filter(({ r }) => {
-    if(fv){ const v = String(r[mv.fk] ?? '').trim().toLowerCase(); if(fv === '__blank' ? v !== '' : v !== fv) return false; }
-    return !q || def.fields.some(f => String(r[f.k] ?? '').toLowerCase().includes(q));
-  });
+  const list = masterShownRows(all);
+  const mv = MASTER_VIEW[masterTab], srt = masterSort[masterTab] || defaultSort(masterTab);
+  const sortKey = masterTab === 'items' ? 'category' : mv.filters[0][0];
+  const pos = itemCatPos();
   const byName = (a, b) => masterNameOf(a.r).localeCompare(masterNameOf(b.r)) || (dateNum(a.r.from) || 0) - (dateNum(b.r.from) || 0);
   const blankLast = (x, y) => (x ? 0 : 1) - (y ? 0 : 1) || String(x).toLowerCase().localeCompare(String(y).toLowerCase());
   list.sort(srt === 'za' ? (a, b) => byName(b, a)
-    : srt === 'cat' ? (a, b) => blankLast(String(a.r[mv.fk] ?? '').trim(), String(b.r[mv.fk] ?? '').trim()) || byName(a, b)
+    : srt === 'grp' ? (a, b) => pos(a.r.group) - pos(b.r.group) || blankLast(String(a.r.group ?? '').trim(), String(b.r.group ?? '').trim()) || byName(a, b)
+    : srt === 'cat' ? (a, b) => blankLast(String(a.r[sortKey] ?? '').trim(), String(b.r[sortKey] ?? '').trim()) || byName(a, b)
     : srt === 'code' ? (a, b) => blankLast(String(a.r.code ?? '').trim(), String(b.r.code ?? '').trim()) || byName(a, b)
     : srt === 'new' ? (a, b) => b.i - a.i
     : byName);
@@ -2715,7 +2855,8 @@ function renderMasterTable(){
     const v = f.calc ? f.calc(r) : r[f.k];
     const txt = v === null || v === undefined ? '' : (f.num && isFinite(v) ? String(v) : String(v));
     const cls = [f.num || f.k === 'max' ? 'num' : '', f.k === 'code' || f.k === 'from' || f.k === 'unit' ? 'mono' : '', f.k === 'name' || f.k === 'item' ? 'main' : '', f.ro ? 'muted' : ''].filter(Boolean).join(' ');
-    return `<td${cls ? ` class="${cls}"` : ''}>${escapeHtml(txt)}${f.k === 'maxPct' && txt === '' ? `<span class="muted">${SLAB_SET.maxPct}</span>` : ''}</td>`;
+    const need = (f.k === 'name' || f.k === 'item') && masterTab !== 'parties' ? masterNeeds(masterTab, r) : [];
+    return `<td${cls ? ` class="${cls}"` : ''}>${escapeHtml(txt)}${f.k === 'maxPct' && txt === '' ? `<span class="muted">${SLAB_SET.maxPct}</span>` : ''}${need.length ? `<br><span class="need-tag" title="Fill these in with ✎">⚠ ${escapeHtml(need.join(' · '))}</span>` : ''}</td>`;
   };
   const colPx = f => f.w ? f.w + 24 : (f.k === 'name' || f.k === 'item') ? 330 : f.wide ? 280 : 150;
   const actPx = admin ? (masterTab === 'slab' ? 170 : 84) : 0;
@@ -2748,8 +2889,8 @@ function renderMasterForm(){
   const d = masterEdit.draft;
   box.innerHTML = `<div class="sync-form" style="max-width:none;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));display:grid;gap:10px 14px;background:var(--paper-raised);border:1px solid var(--gold);border-radius:4px;padding:14px;margin-bottom:12px;">
     ${def.fields.filter(f => !f.ro).map(f => `<label style="display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:var(--ink-soft);${f.wide || f.req && !f.w ? 'grid-column:span 2;' : ''}">${escapeHtml(f.label || hdr(f))}${f.req ? ' *' : ''}
-      <input data-k="${f.k}"${masterTab === 'items' && f.k === 'category' ? ' list="mCatList"' : ''} value="${escapeHtml(d[f.k] === null || d[f.k] === undefined ? '' : String(d[f.k]))}" placeholder="${f.placeholder ? escapeHtml(f.placeholder()) : ''}"></label>`).join('')}
-    ${masterTab === 'items' ? `<datalist id="mCatList">${categorySuggestions().map(c => `<option value="${escapeHtml(c)}">`).join('')}</datalist>` : ''}
+      <input data-k="${f.k}"${masterTab === 'items' && f.k === 'category' ? ' list="mCatList"' : masterTab === 'items' && f.k === 'group' ? ' list="mGrpList"' : ''} value="${escapeHtml(d[f.k] === null || d[f.k] === undefined ? '' : String(d[f.k]))}" placeholder="${f.placeholder ? escapeHtml(f.placeholder()) : ''}"></label>`).join('')}
+    ${masterTab === 'items' ? `<datalist id="mCatList">${categorySuggestions().map(c => `<option value="${escapeHtml(c)}">`).join('')}</datalist><datalist id="mGrpList">${itemCatSuggestions().map(c => `<option value="${escapeHtml(c)}">`).join('')}</datalist>` : ''}
     <div style="grid-column:1/-1;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
       <button type="button" class="bar-btn primary" id="mSave">${masterEdit.row ? 'Save changes' : 'Add'}</button>
       <button type="button" class="bar-btn" id="mCancel">Cancel</button>
@@ -3338,7 +3479,9 @@ function updateSlabStatus(){
   const el = document.getElementById('slabStatus');
   if(el) el.textContent = SLAB.length ? `💰 Rate slab: ${new Set(SLAB.map(r => nameKey(r.item))).size} items · max +${SLAB_SET.maxPct}%` : '💰 Rate slab is empty — slab check is off';
   const nav = (id, n) => { const e = document.getElementById(id); if(e) e.textContent = n ? String(n) : ''; };
-  nav('navItems', MASTER.items.length); nav('navParties', MASTER.parties.length);
+  nav('navItems', MASTER.items.length);
+  try{ const ni = MASTER_ALL && MASTER_ALL.branches && MASTER_ALL.branches[BRANCH.key] ? MASTER_ALL.branches[BRANCH.key].items.filter(r => masterNeeds('items', r).length).length : 0;
+    const e = document.getElementById('navItems'); if(e && ni) e.innerHTML = `${MASTER.items.length} · <span class="nc-need" title="${ni} items need attention">⚠${ni}</span>`; }catch(err){} nav('navParties', MASTER.parties.length);
   nav('navSlab', new Set(SLAB.map(r => nameKey(r.item))).size);
   nav('navBills', window.__records.filter(r => !r.local).length + window.__skipped.filter(x => !x.local).length);
   nav('navLocal', window.__records.filter(r => r.local).length + window.__skipped.filter(x => x.local).length);
