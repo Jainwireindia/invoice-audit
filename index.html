@@ -139,6 +139,13 @@
   .m-table td.num, .m-table th.num{ text-align: right; font-family: 'IBM Plex Mono', monospace; }
   .m-table td.muted, .m-table .muted{ color: var(--ink-soft); font-size: 11.5px; }
   .m-table td.act{ text-align: right; white-space: nowrap; }
+  .m-table td.m-edt{ padding: 4px 5px; }
+  .m-table .m-ed{ min-height: 1.45em; padding: 4px 5px; border: 1px solid transparent; border-radius: 3px; outline: none; cursor: text; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .m-table tr:hover .m-ed{ border-color: var(--rule); background: rgba(255,255,255,.55); }
+  .m-table .m-ed:focus{ border-color: var(--gold); background: #fff; box-shadow: 0 0 0 2px rgba(176,141,60,.18); }
+  .m-table .m-ed:empty::before{ content: attr(data-ph); color: var(--ink-soft); opacity: .6; }
+  .m-table td.m-err .m-ed{ border-color: var(--red); background: #fff3f1; }
+  .m-table td .need-tag{ margin-left: 5px; }
   .m-table tbody tr:nth-child(even) td{ background: rgba(0,0,0,.018); }
   .m-table tbody tr:hover td{ background: var(--accent-bg); }
   @media (max-width: 800px){

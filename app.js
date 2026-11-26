@@ -4,7 +4,7 @@
 // per browser/machine so an "updated" notice can be shown after an update (see
 // loadPersisted()). This is purely a tracking label — it has no effect on parsing
 // or matching logic.
-const APP_VERSION = 'v8.7';
+const APP_VERSION = 'v8.8';
 // The Invoice Audit Google Sheet — opened from "Sync & login", the sidebar and the master screens.
 // The sheet script also reports its own address on every sync, which takes over if it ever moves.
 // v8.3: the company's Apps Script web app is built in — nobody has to paste it. (Redeploy with
@@ -2291,6 +2291,19 @@ function noteRulesMaybeChanged(){
   if(syncCfg() && isAdmin()) queueOutbox({ type: 'rules', branch: BRANCH.key, rules: JSON.parse(now) });
 }
 function queueOutbox(item){
+  // Many quick edits on one tab go to the sheet together (one call instead of one per cell).
+  if(item.type === 'rows'){
+    const last = outbox[outbox.length - 1];
+    if(last && last.type === 'rows' && last.tab === item.tab && !(flushing && last === outbox[0]) && last.rows.length + item.rows.length <= 300){
+      item.rows.forEach(nr => {
+        const same = last.rows.find(o => JSON.stringify(o.match) === JSON.stringify(nr.match));
+        if(same) Object.assign(same.values, nr.values); else last.rows.push(nr);
+      });
+      idbSet('outbox', outbox); updateSyncStatus();
+      clearTimeout(flushTimer); flushTimer = setTimeout(flushOutbox, 1200);
+      return;
+    }
+  }
   if(item.type === 'rules') outbox = outbox.filter(o => !(o.type === 'rules' && o.branch === item.branch));
   outbox.push(item);
   idbSet('outbox', outbox);
@@ -2602,14 +2615,14 @@ const MASTER_DEFS = {
     list: () => MASTER_ALL.slab,
     desc: () => `ONE safety slab for every branch, rates INCLUDING GST. Every bill line — loading-list and local sales — is checked against it: below the minimum is flagged as a loss, above the maximum as billed too high. The maximum is the minimum + the item's Max % (blank = the default below). Like the loading list, the slab follows each item's rate rule: for sheet and roll items type the rate <b>per sq.ft</b> — a bill per piece / roll is checked against rate × height × length from the Item master. To change a rate and keep the history, use "＋ New rate": old bills keep being checked against the rate valid on their date.`,
     fields: [
-      { k: 'item', h: 'Tally item name', req: true }, { k: 'unit', h: 'Unit', w: 64, req: true },
-      { k: 'gst', h: 'GST %', w: 52, num: true }, { k: 'min', h: 'Minimum rate (incl GST)', label: 'Minimum ₹ (incl GST)', w: 90, num: true, req: true },
+      { k: 'item', h: 'Tally item name', req: true }, { k: 'unit', h: 'Unit', w: 64 },
+      { k: 'gst', h: 'GST %', w: 52, num: true }, { k: 'min', h: 'Minimum rate (incl GST)', label: 'Minimum ₹ (incl GST)', w: 90, num: true },
       { k: 'maxPct', h: 'Max %', w: 56, num: true, placeholder: () => String(SLAB_SET.maxPct) },
       { k: 'max', h: 'Maximum rate (incl GST)', label: 'Maximum ₹', w: 84, ro: true, calc: r => (isFinite(r.min) && r.min !== null) ? fmt(slabMaxOf(r)) : '' },
       { k: 'from', h: 'Effective from', label: 'From (DD-MM-YYYY)', w: 92, placeholder: () => 'always' },
       { k: 'other', h: 'Other names / spellings', wide: true },
       { k: 'by', h: 'Updated by', w: 110, ro: true, calc: r => [r.by, r.at].filter(Boolean).join(' · ') }],
-    key: r => ({ 'Tally item name': r.item, 'Unit': r.unit, 'Effective from': r.from }),
+    key: r => ({ 'Tally item name': r.item, 'Unit': r.unit || '', 'Effective from': r.from || '' }),
     same: (a, b) => normalize(a.item) === normalize(b.item) && unitKey(a.unit) === unitKey(b.unit) && (a.from || '') === (b.from || ''),
   },
 };
@@ -2620,22 +2633,42 @@ const MASTER_VIEW = {
   items:   { filters: [['group', 'Item category'], ['category', 'Rate category']],
              sorts: [['grp', 'Item category (my order)'], ['az', 'Name A → Z'], ['za', 'Name Z → A'], ['cat', 'Rate category'], ['code', 'Code A → Z'], ['new', 'Newest first']] },
   parties: { filters: [['place', 'Place']], sorts: [['az', 'Name A → Z'], ['za', 'Name Z → A'], ['cat', 'Place, then name'], ['new', 'Newest first']] },
-  slab:    { filters: [['unit', 'Unit']],   sorts: [['az', 'Item A → Z'], ['za', 'Item Z → A'], ['cat', 'Unit, then item'], ['new', 'Newest first']] },
+  slab:    { filters: [['__group', 'Item category'], ['unit', 'Unit']],
+             sorts: [['grp', 'Item category (my order)'], ['az', 'Item A → Z'], ['za', 'Item Z → A'], ['cat', 'Unit, then item'], ['new', 'Newest first']] },
 };
 function masterNameOf(r){ return normalize(r.name || r.item || ''); }
-function defaultSort(tab){ return tab === 'items' ? 'grp' : 'az'; }
+function defaultSort(tab){ return tab === 'items' || tab === 'slab' ? 'grp' : 'az'; }
+// A rate slab row's item category comes from the Item master (this branch first, then the other).
+var _grpMap = null;
+function slabGroupOf(r){
+  if(!_grpMap){
+    _grpMap = new Map();
+    [BRANCH.key, BRANCH.key === 'ekm' ? 'clt' : 'ekm'].forEach(b => ((MASTER_ALL.branches[b] || {}).items || []).forEach(it => {
+      const k = nameKey(it.name); if(k && !_grpMap.has(k) && it.group) _grpMap.set(k, it.group);
+    }));
+  }
+  return _grpMap.get(nameKey(r.item)) || '';
+}
+const UNIT_LABEL = { sqft: 'sq.ft', kg: 'kg', nos: 'PCS / NOS', roll: 'ROLL', bundle: 'bundle', mtr: 'mtr', sqmtr: 'sq.mtr', ft: 'ft', box: 'box', set: 'set' };
+// The value a filter / the category sort looks at (units grouped: PCS, PC, PICS, NOS are one).
+function masterVal(r, fk){
+  if(fk === '__group') return slabGroupOf(r);
+  if(fk === 'group') return masterTab === 'slab' ? slabGroupOf(r) : (r.group || '');
+  if(fk === 'unit'){ const u = String(r.unit || '').trim(); return u ? (UNIT_LABEL[unitKey(u)] || u) : ''; }
+  return r[fk] ?? '';
+}
 function masterFilterValues(fk){
   const seen = new Map();
   let blank = 0;
   MASTER_DEFS[masterTab].list().forEach(r => {
-    const v = String(r[fk] ?? '').trim();
+    const v = String(masterVal(r, fk)).trim();
     if(!v){ blank++; return; }
     const k = v.toLowerCase();
     if(!seen.has(k)) seen.set(k, { v, n: 0 });
     seen.get(k).n++;
   });
   let vals = [...seen.values()];
-  if(fk === 'group'){ const pos = itemCatPos(); vals.sort((a, b) => pos(a.v) - pos(b.v) || a.v.localeCompare(b.v)); }
+  if(fk === 'group' || fk === '__group'){ const pos = itemCatPos(); vals.sort((a, b) => pos(a.v) - pos(b.v) || a.v.localeCompare(b.v)); }
   else vals.sort((a, b) => a.v.localeCompare(b.v));
   return { vals, blank };
 }
@@ -2749,6 +2782,7 @@ function def_needCount(){ return MASTER_DEFS[masterTab].list().filter(r => maste
 function hdr(f){ return typeof f.h === 'function' ? f.h() : f.h; }
 
 function renderMasterPanel(){
+  _grpMap = null;
   const def = MASTER_DEFS[masterTab];
   if(!def){ masterPanel.innerHTML = ''; return; }
   if(!MASTER_ALL || !MASTER_ALL.branches || !MASTER_ALL.branches[BRANCH.key]){
@@ -2761,7 +2795,7 @@ function renderMasterPanel(){
   const branchTxt = masterTab === 'slab' ? 'all branches' : (BRANCH.key === 'clt' ? 'Calicut · Kannur' : 'Ernakulam');
   let html = `<h3>${def.label} <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink-soft);font-weight:400;">· ${branchTxt} · "${escapeHtml(def.sheet())}" tab · <a data-sheet-link href="${escapeHtml(sheetUrl())}" target="_blank" rel="noopener" style="color:var(--gold);">open the sheet ↗</a> · ${list.length} row${list.length === 1 ? '' : 's'}</span></h3>
     <p class="desc">${def.desc()}</p>`;
-  if(masterTab === 'slab') html += slabSettingsHtml(admin) + slabChecksHtml();
+  if(masterTab === 'slab') html += slabSettingsHtml(admin) + `<div id="slabChecks">${slabChecksHtml()}</div>`;
   html += `<div class="row pr-actions" style="gap:8px;flex-wrap:wrap;margin-bottom:10px;">
       <input type="text" id="mSearch" placeholder="Search…" value="${escapeHtml(masterSearch)}" style="flex:1;min-width:200px;font-family:'IBM Plex Mono',monospace;font-size:12.5px;border:1px solid var(--rule-strong);border-radius:3px;padding:7px 9px;">
       ${masterControlsHtml()}
@@ -2775,6 +2809,7 @@ function renderMasterPanel(){
     ${admin ? '' : `<p class="master-note">You are logged in as a checker — only an admin can change this list.</p>`}
     ${syncState.roleNote ? `<p class="master-note" style="color:var(--red);">⚠ ${escapeHtml(syncState.roleNote)}</p>` : ''}
     <div id="mForm"></div>
+    ${admin ? '<div class="sync-msg" id="mInlineMsg" style="margin:0 0 6px;min-height:18px;">Click any cell to type — it is saved when you click away or press Enter (Enter also moves down). Esc undoes.</div>' : ''}
     <div class="m-scroll"><table class="m-table" id="mTable"></table></div>`;
   masterPanel.innerHTML = html;
 
@@ -2879,11 +2914,61 @@ function masterShownRows(all){
   return all.filter(({ r }) => {
     for(const fk of Object.keys(cf)){
       const fv = cf[fk]; if(!fv) continue;
-      const v = String(r[fk] ?? '').trim().toLowerCase();
+      const v = String(masterVal(r, fk)).trim().toLowerCase();
       if(fv === '__blank' ? v !== '' : v !== fv) return false;
     }
     if(masterAttention[masterTab] && !masterNeeds(masterTab, r).length) return false;
     return !q || def.fields.some(f => String(r[f.k] ?? '').toLowerCase().includes(q));
+  });
+}
+// ---- Inline editing: type in a cell, click away (or Enter) and the row is saved to the sheet. ----
+function wireInlineEdit(table){
+  const def = MASTER_DEFS[masterTab];
+  const toStr = (f, v) => v === null || v === undefined ? '' : String(v);
+  table.addEventListener('focusin', e => { const ed = e.target.closest('.m-ed'); if(ed) ed.dataset.orig = ed.textContent; });
+  table.addEventListener('keydown', e => {
+    const ed = e.target.closest('.m-ed'); if(!ed) return;
+    if(e.key === 'Escape'){ ed.textContent = ed.dataset.orig || ''; ed.blur(); return; }
+    if(e.key === 'Enter' || (e.key === 'Tab' && false)){
+      e.preventDefault();
+      // Enter: save and go to the same column on the next row — quick for typing a column of rates.
+      const tr = ed.closest('tr'), next = tr.nextElementSibling && tr.nextElementSibling.querySelector(`.m-ed[data-k="${ed.dataset.k}"]`);
+      if(next){ next.focus(); const sel = getSelection(); sel.selectAllChildren(next); } else ed.blur();
+    }
+  });
+  table.addEventListener('focusout', e => {
+    const ed = e.target.closest('.m-ed'); if(!ed) return;
+    const txt = ed.textContent.replace(/\s+/g, ' ').trim();
+    if(txt === (ed.dataset.orig || '').trim()) return;
+    const tr = ed.closest('tr'), row = def.list()[+tr.dataset.i];
+    if(!row) return;
+    const draft = {};
+    def.fields.forEach(f => { if(!f.ro) draft[f.k] = toStr(f, row[f.k]); });
+    draft[ed.dataset.k] = txt;
+    const err = saveMasterRow(row, draft);
+    const td = ed.closest('td'), msg = document.getElementById('mInlineMsg');
+    if(err){
+      td.classList.add('m-err'); td.title = err;
+      if(msg){ msg.className = 'sync-msg bad'; msg.textContent = '⚠ ' + err + ' — fix it or press Esc in the cell to undo.'; }
+      return;
+    }
+    td.classList.remove('m-err'); td.title = '';
+    ed.textContent = toStr(null, row[ed.dataset.k]);
+    ed.dataset.orig = ed.textContent;
+    if(msg){ msg.className = 'sync-msg ok'; msg.textContent = `✓ Saved "${row.name || row.item}" — sending to the Google Sheet.`; }
+    // refresh what depends on the row: the calculated cells and the ⚠ tag
+    def.fields.forEach((f, ci) => {
+      if(!f.calc) return;
+      const c = tr.querySelector(`td[data-calc="${f.k}"]`); if(c) c.textContent = toStr(f, f.calc(row));
+    });
+    const sc = document.getElementById('slabChecks'); if(sc && masterTab === 'slab') sc.innerHTML = slabChecksHtml();
+    const nb = document.getElementById('mNeed'); if(nb) nb.textContent = `⚠ Needs attention (${def_needCount()})`;
+    const nameTd = tr.querySelector('.m-ed[data-k="name"], .m-ed[data-k="item"]');
+    if(nameTd && masterTab !== 'parties'){
+      const cellTd = nameTd.closest('td'), old = cellTd.querySelector('.need-tag'), need = masterNeeds(masterTab, row);
+      if(old) old.remove();
+      if(need.length) cellTd.insertAdjacentHTML('beforeend', `<span class="need-tag">⚠ ${escapeHtml(need.join(' · '))}</span>`);
+    }
   });
 }
 // Item master: give every row now on screen the same item category (one save to the sheet).
@@ -2909,13 +2994,14 @@ function renderMasterTable(){
   const all = def.list().map((r, i) => ({ r, i }));
   const list = masterShownRows(all);
   const mv = MASTER_VIEW[masterTab], srt = masterSort[masterTab] || defaultSort(masterTab);
-  const sortKey = masterTab === 'items' ? 'category' : mv.filters[0][0];
+  const sortKey = masterTab === 'items' ? 'category' : masterTab === 'slab' ? 'unit' : mv.filters[0][0];
   const pos = itemCatPos();
+  const grpOf = r => masterTab === 'slab' ? slabGroupOf(r) : (r.group || '');
   const byName = (a, b) => masterNameOf(a.r).localeCompare(masterNameOf(b.r)) || (dateNum(a.r.from) || 0) - (dateNum(b.r.from) || 0);
   const blankLast = (x, y) => (x ? 0 : 1) - (y ? 0 : 1) || String(x).toLowerCase().localeCompare(String(y).toLowerCase());
   list.sort(srt === 'za' ? (a, b) => byName(b, a)
-    : srt === 'grp' ? (a, b) => pos(a.r.group) - pos(b.r.group) || blankLast(String(a.r.group ?? '').trim(), String(b.r.group ?? '').trim()) || byName(a, b)
-    : srt === 'cat' ? (a, b) => blankLast(String(a.r[sortKey] ?? '').trim(), String(b.r[sortKey] ?? '').trim()) || byName(a, b)
+    : srt === 'grp' ? (a, b) => pos(grpOf(a.r)) - pos(grpOf(b.r)) || blankLast(String(grpOf(a.r)).trim(), String(grpOf(b.r)).trim()) || byName(a, b)
+    : srt === 'cat' ? (a, b) => blankLast(String(masterVal(a.r, sortKey)).trim(), String(masterVal(b.r, sortKey)).trim()) || byName(a, b)
     : srt === 'code' ? (a, b) => blankLast(String(a.r.code ?? '').trim(), String(b.r.code ?? '').trim()) || byName(a, b)
     : srt === 'new' ? (a, b) => b.i - a.i
     : byName);
@@ -2926,7 +3012,10 @@ function renderMasterTable(){
     const txt = v === null || v === undefined ? '' : (f.num && isFinite(v) ? String(v) : String(v));
     const cls = [f.num || f.k === 'max' ? 'num' : '', f.k === 'code' || f.k === 'from' || f.k === 'unit' ? 'mono' : '', f.k === 'name' || f.k === 'item' ? 'main' : '', f.ro ? 'muted' : ''].filter(Boolean).join(' ');
     const need = (f.k === 'name' || f.k === 'item') && masterTab !== 'parties' ? masterNeeds(masterTab, r) : [];
-    return `<td${cls ? ` class="${cls}"` : ''}>${escapeHtml(txt)}${f.k === 'maxPct' && txt === '' ? `<span class="muted">${SLAB_SET.maxPct}</span>` : ''}${need.length ? `<br><span class="need-tag" title="Fill these in with ✎">⚠ ${escapeHtml(need.join(' · '))}</span>` : ''}</td>`;
+    const tag = need.length ? `<span class="need-tag" title="Type the missing details straight into this row">⚠ ${escapeHtml(need.join(' · '))}</span>` : '';
+    if(admin && !f.ro)   // typed straight into the table; saved when you click away / press Enter
+      return `<td class="${cls} m-edt"><div class="m-ed" contenteditable="plaintext-only" spellcheck="false" data-k="${f.k}"${f.k === 'maxPct' ? ` data-ph="${SLAB_SET.maxPct}"` : f.k === 'from' ? ' data-ph="always"' : ''}>${escapeHtml(txt)}</div>${tag}</td>`;
+    return `<td${cls ? ` class="${cls}"` : ''}${f.calc ? ` data-calc="${f.k}"` : ''}>${escapeHtml(txt)}${f.k === 'maxPct' && txt === '' ? `<span class="muted">${SLAB_SET.maxPct}</span>` : ''}${tag}</td>`;
   };
   const colPx = smartColWidths(def, shown.map(x => x.r));
   const actPx = admin ? (masterTab === 'slab' ? 170 : 84) : 0;
@@ -2940,6 +3029,7 @@ function renderMasterTable(){
       || `<tr><td colspan="${def.fields.length + 1}" style="color:var(--ink-soft);">${all.length ? 'Nothing matches.' : 'Nothing here yet.'}</td></tr>`}
     ${list.length > LIMIT ? `<tr><td colspan="${def.fields.length + 1}" style="color:var(--ink-soft);">… ${list.length - LIMIT} more — type to search.</td></tr>` : ''}</tbody>`;
   wireColGrips(table);
+  if(admin) wireInlineEdit(table);
   table.querySelectorAll('tr[data-i]').forEach(tr => {
     const row = def.list()[+tr.dataset.i];
     tr.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => {
@@ -2993,7 +3083,7 @@ function cleanMasterRow(draft){
     }else out[f.k] = v;
   }
   if(masterTab === 'slab'){
-    if(!(out.min > 0)) return { err: 'The minimum rate must be more than 0.' };
+    if(out.min !== null && !(out.min > 0)) return { err: 'The minimum rate must be more than 0 (or blank).' };
     if(out.maxPct !== null && out.maxPct < 0) return { err: 'Max % cannot be negative.' };
     if(out.from && dateNum(out.from) === null) return { err: 'Effective from must be a date like 01-12-2026, or blank for "always".' };
     if(out.from){ const m = /^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})$/.exec(out.from); out.from = pad2(+m[1]) + '-' + pad2(+m[2]) + '-' + m[3]; }
@@ -3003,7 +3093,7 @@ function cleanMasterRow(draft){
 function toSheetValues(row){
   const def = MASTER_DEFS[masterTab], v = {};
   def.fields.forEach(f => { if(!f.ro) v[hdr(f)] = row[f.k] === null || row[f.k] === undefined ? '' : row[f.k]; });
-  if(masterTab === 'slab') v['Maximum rate (incl GST)'] = slabMaxOf(row);
+  if(masterTab === 'slab') v['Maximum rate (incl GST)'] = row.min > 0 ? slabMaxOf(row) : '';
   return v;
 }
 function saveMasterRow(original, draft){
@@ -3031,6 +3121,7 @@ function deleteMasterRow(row){
   renderMasterPanel();
 }
 function afterMasterChange(){
+  _grpMap = null;
   idbSet('master', MASTER_ALL);
   applyMasterAll(false);
   recalcAllCards();
