@@ -112,7 +112,32 @@
   html.side-collapsed .side-foot{ display: none; }
   html.locked .side{ display: none; }
   html.locked .shell{ margin-left: 0; }
-  body:not([data-view="bills"]) #viewBills{ display: none; }
+  body:not([data-view="bills"]):not([data-view="local"]) #viewBills{ display: none; }
+  /* two bill tabs share one screen: each shows only its own drop boxes, bills and skipped files */
+  body[data-view="bills"] #localZone,
+  body[data-view="bills"] .invoice-card.local,
+  body[data-view="bills"] [data-entry-id][data-local="1"],
+  body[data-view="local"] #excelZone, body[data-view="local"] #dropzone, body[data-view="local"] #excelStatus,
+  body[data-view="local"] .invoice-card:not(.local),
+  body[data-view="local"] [data-entry-id][data-local="0"]{ display: none !important; }
+  body[data-view="bills"] .zones{ grid-template-columns: 1fr 1fr; }
+  body[data-view="local"] .zones{ grid-template-columns: 1fr; }
+  body[data-view="local"] #localZone{ padding: 34px 20px; }
+
+  /* ---- v8: master tables ---- */
+  .m-scroll{ max-height: 66vh; overflow: auto; border: 1px solid var(--rule-strong); border-radius: 4px; background: var(--paper-raised); }
+  .m-table{ width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: 13px; }
+  .m-table th{ position: sticky; top: 0; z-index: 1; background: #E9E4D6; text-align: left; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600;
+    letter-spacing: .04em; text-transform: uppercase; color: var(--ink-soft); padding: 9px 10px; border-bottom: 1px solid var(--rule-strong); white-space: normal; line-height: 1.3; vertical-align: bottom; }
+  :root[data-branch="clt"] .m-table th{ background: #DCE7F0; }
+  .m-table td{ padding: 8px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; line-height: 1.45; overflow-wrap: anywhere; color: var(--ink); }
+  .m-table td.mono{ font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
+  .m-table td.main{ font-weight: 600; }
+  .m-table td.num, .m-table th.num{ text-align: right; font-family: 'IBM Plex Mono', monospace; }
+  .m-table td.muted, .m-table .muted{ color: var(--ink-soft); font-size: 11.5px; }
+  .m-table td.act{ text-align: right; white-space: nowrap; }
+  .m-table tbody tr:nth-child(even) td{ background: rgba(0,0,0,.018); }
+  .m-table tbody tr:hover td{ background: var(--accent-bg); }
   @media (max-width: 800px){
     .shell, html.side-collapsed .shell{ margin-left: 56px; }
     html:not(.side-collapsed) .side{ box-shadow: 0 0 30px rgba(0,0,0,.35); }
@@ -616,7 +641,8 @@
     <div class="side-title">Invoice Audit<small id="sideBranch"></small></div>
   </div>
   <nav>
-    <button type="button" class="nav-btn active" data-view="bills"><span class="ni">🧾</span><span class="nl">Check bills</span><span class="nav-count" id="navBills"></span></button>
+    <button type="button" class="nav-btn active" data-view="bills"><span class="ni">🚚</span><span class="nl">Check dispatch list</span><span class="nav-count" id="navBills"></span></button>
+    <button type="button" class="nav-btn" data-view="local"><span class="ni">🏪</span><span class="nl">Check local bills</span><span class="nav-count" id="navLocal"></span></button>
     <div class="nav-sep"></div>
     <button type="button" class="nav-btn" data-view="items" id="masterToggle"><span class="ni">📦</span><span class="nl">Item master</span><span class="nav-count" id="navItems"></span></button>
     <button type="button" class="nav-btn" data-view="parties"><span class="ni">👥</span><span class="nl">Party master</span><span class="nav-count" id="navParties"></span></button>

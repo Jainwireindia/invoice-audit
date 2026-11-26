@@ -3,7 +3,7 @@
 // opens and works without internet. Google Sheet sync calls are never cached.
 // Bump CACHE with every release: the new files are fetched in the background and the app offers
 // "Reload now".
-const CACHE = 'invoice-audit-v8.0';
+const CACHE = 'invoice-audit-v8.1';
 const APP_FILES = [
   './', './index.html', './app.js', './branch-ekm.js', './branch-clt.js', './manifest.webmanifest',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png'

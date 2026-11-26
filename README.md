@@ -1,4 +1,4 @@
-# Invoice Audit v8.0
+# Invoice Audit v8.1
 
 One installable app for both branches (Ernakulam · Calicut/Kannur). It checks every sales bill in two ways:
 
@@ -6,6 +6,15 @@ One installable app for both branches (Ernakulam · Calicut/Kannur). It checks e
 2. **Loading list:** as before, for bills on the day's rate sheet or loading plan. Differences are now shown after GST.
 
 Each line ends as **✓** (checked and fine), **✗** (discrepancy) or **❓** (no slab rate to check against). The app never guesses a slab rate: it is found only by the exact Tally item name printed on the bill (or a spelling on the slab row), in the same unit, valid on the invoice date.
+
+## What's new in v8.1
+
+- **Two bill tabs** in the sidebar: 🚚 **Check dispatch list** (rate sheet / loading plan + bills) and 🏪 **Check local bills** (slab check only). Each shows, counts, logs and clears only its own bills.
+- **Item and party tables** now have proper columns: the header stays in place while scrolling, long names wrap, and numbers are right-aligned.
+- **⇪ Import TallySync backup** (Item master or Party master, admins). Pick the TallySync `.json` backup and it fills the Item master (code, name, category, unit, size, bundle kg, GST %, spellings), the Party master (name, rate-sheet names, place) and any new bundle weights.
+  - It only adds and fills empty cells, and never overwrites what is typed in the sheet. Importing the same backup twice changes nothing.
+  - A code that has a new name in TallySync is treated as a Tally rename: the new name becomes the item name and the old one is kept as another spelling.
+  - An item billed per sq.ft or kg is always "Direct", even if TallySync prices it as a roll or sheet.
 
 ## What's new in v8.0
 
@@ -18,7 +27,7 @@ Each line ends as **✓** (checked and fine), **✗** (discrepancy) or **❓** (
 
 ## Update from v7.1 (once)
 
-1. **Sheet:** go to Extensions → Apps Script, paste the new `apps-script/Code.gs` over the old one, and save. Then go to Deploy → Manage deployments → ✎ → Version: **New version** → Deploy. The URL stays the same.
+1. **Sheet:** go to Extensions → Apps Script, paste the new `apps-script/Code.gs` (v8.1 adds the import) over the old one, and save. Then go to Deploy → Manage deployments → ✎ → Version: **New version** → Deploy. The URL stays the same.
    The next sync adds the **Rate Slab** tab and the new columns (Role, GST %, Source, Slab loss ₹, Type) by itself. Nothing existing is moved or deleted.
 2. **Site:** upload everything in this folder to the `invoice-audit` GitHub repo, replacing the old files. Each PC shows "A new version is ready — Reload now".
 3. In **Users**, set the Role for each person: `admin` or `checker`. A blank role counts as admin.

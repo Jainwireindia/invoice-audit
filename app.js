@@ -4,7 +4,7 @@
 // per browser/machine so an "updated" notice can be shown after an update (see
 // loadPersisted()). This is purely a tracking label — it has no effect on parsing
 // or matching logic.
-const APP_VERSION = 'v8.0';
+const APP_VERSION = 'v8.1';
 // The branch's formulas (branch-ekm.js or branch-clt.js) are loaded just before this file.
 
 // Web build: Claude's window.storage doesn't exist on GitHub Pages, so this shim stores the same
@@ -330,13 +330,18 @@ function normalize(s){
 var currentView = 'bills';
 const VIEW_PANELS = { items: 'masterPanel', parties: 'masterPanel', slab: 'masterPanel', rules: 'rulesPanel', codes: 'codesPanel', log: 'logPanel', parser: 'parserReportPanel', sync: 'syncPanel' };
 function setView(v){
-  if(!VIEW_PANELS[v]) v = 'bills';
+  if(!VIEW_PANELS[v] && v !== 'local') v = 'bills';
+  const tabChanged = (v === 'bills' || v === 'local') && v !== currentView;
   currentView = v;
   document.body.dataset.view = v;
   [masterPanel, rulesPanel, codesPanel, logPanel, parserReportPanel, syncPanel].forEach(p => p.classList.remove('open'));
-  if(v !== 'bills'){
+  if(v === 'bills' || v === 'local'){
+    try{ localStorage.setItem('ia.tab', v); }catch(e){}
+    applyTabTexts();
+    if(tabChanged && typeof renderOverview === 'function'){ overviewFilter = 'attention'; renderOverview(); updateExportBarVisibility(); }
+  }else{
     document.getElementById(VIEW_PANELS[v]).classList.add('open');
-    if(v === 'items' || v === 'parties' || v === 'slab'){ masterTab = v; renderMasterPanel(); }
+    if(v === 'items' || v === 'parties' || v === 'slab'){ if(masterTab !== v){ masterSearch = ''; masterEdit = null; } masterTab = v; renderMasterPanel(); }
     else if(v === 'log') renderLogPanel();
     else if(v === 'parser') renderParserReportPanel();
     else if(v === 'sync') renderSyncPanel();
@@ -345,12 +350,22 @@ function setView(v){
   window.scrollTo(0, 0);
 }
 // Older code opens a panel with openOnly(panel): routed to the matching view.
+function applyTabTexts(){
+  const t = BRANCH.text || {};
+  const local = currentView === 'local';
+  const set = (id, v) => { const el = document.getElementById(id); if(el) el.textContent = v || ''; };
+  set('eyebrowText', local ? (BRANCH.key === 'clt' ? 'Calicut · Kannur' : 'Ernakulam') + ' · Local sales · Rate slab check' : t.eyebrow);
+  set('ledeText', local
+    ? 'Drop the local sales bills (consumer rates, no loading list). Every line is checked against the rate slab after GST: below the minimum is flagged as a loss in ₹ and %, above the maximum as billed too high. Lines with no slab rate show ❓.'
+    : t.lede);
+}
 function openOnly(panel){
   const v = Object.keys(VIEW_PANELS).find(k => VIEW_PANELS[k] === panel.id && (panel !== masterPanel || k === masterTab)) || 'bills';
   setView(v);
   return true;
 }
 document.querySelectorAll('.nav-btn[data-view]').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
+try{ if(localStorage.getItem('ia.tab') === 'local'){ currentView = 'local'; document.body.dataset.view = 'local'; document.querySelectorAll('.nav-btn[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === 'local')); } }catch(e){}
 document.getElementById('sideToggle').addEventListener('click', () => {
   const c = document.documentElement.classList.toggle('side-collapsed');
   try{ localStorage.setItem('ia.side', c ? 'collapsed' : 'open'); }catch(e){}
@@ -1434,7 +1449,7 @@ function recalcCard(card){
 
 
 function updateExportBarVisibility(){
-  exportBar.style.display = window.__records.length ? 'block' : 'none';
+  exportBar.style.display = tabRecords().length ? 'block' : 'none';
 }
 exportBtn.addEventListener('click', () => {
   const rows = [['Bill', 'Invoice #', 'Description', 'Category', 'Billed Qty', 'Actual Qty', 'Unit', 'Billed Rate', 'Expected Rate', 'Billed Amount', 'Issue']];
@@ -1721,7 +1736,7 @@ async function processBatch(files, opts){
     }else{
       const entry = {
         id: 's' + seq + Math.random().toString(36).slice(2, 6), seq, file, fileKey: key, filename: file.name,
-        kind: outcome.kind, code: outcome.code, reason: outcome.reason, deliveryNote: outcome.deliveryNote || null
+        kind: outcome.kind, code: outcome.code, reason: outcome.reason, deliveryNote: outcome.deliveryNote || null, local: !!opts.local
       };
       window.__skipped.push(entry);
       newSkipped.push(entry);
@@ -1746,6 +1761,7 @@ async function processBatch(files, opts){
   updateExportBarVisibility();
   processingEl.innerHTML = '';
   batchInProgress = false;
+  if(!!opts.local !== (currentView === 'local') && (currentView === 'bills' || currentView === 'local')) setView(opts.local ? 'local' : 'bills');
   renderOverview();
 }
 
@@ -1757,6 +1773,7 @@ const LIKELY_A_BILL = new Set(['NO_TABLE', 'NO_ROWS', 'PARSER_ERROR', 'NO_TEXT',
 function renderSkippedEntry(entry){
   const box = document.createElement('div');
   box.dataset.entryId = entry.id;
+  box.dataset.local = entry.local ? '1' : '0';
   if(entry.kind === 'dn'){
     box.className = 'dn-box';
     const dn = entry.deliveryNote || {};
@@ -1815,10 +1832,13 @@ const STATUS_META = {
   duplicate:   { label: 'Duplicate — skipped', cls: 'muted' },
 };
 
+// v8: "Check dispatch list" and "Check local bills" are two tabs; each shows and counts only its own bills.
+function inTab(x){ return !!(x && x.local) === (currentView === 'local'); }
+function tabRecords(){ return window.__records.filter(inTab); }
 function overviewRows(){
   const blockCounts = {};
-  window.__records.forEach(r => { if(r.selectedBlockName) blockCounts[r.selectedBlockName] = (blockCounts[r.selectedBlockName] || 0) + 1; });
-  const rows = window.__records.map(r => {
+  tabRecords().forEach(r => { if(r.selectedBlockName) blockCounts[r.selectedBlockName] = (blockCounts[r.selectedBlockName] || 0) + 1; });
+  const rows = tabRecords().map(r => {
     const kind = r.statusKind || 'name';
     return {
       seq: r.seq, kind, isRecord: true, ref: r,
@@ -1834,7 +1854,7 @@ function overviewRows(){
       readWarn: (r.readWarnings || []).length && !r.readWarningsAck ? r.readWarnings.length : 0,
     };
   });
-  window.__skipped.forEach(s => rows.push({
+  window.__skipped.filter(inTab).forEach(s => rows.push({
     seq: s.seq, kind: s.kind, isRecord: false, ref: s,
     file: s.filename, party: s.deliveryNote && s.deliveryNote.party ? s.deliveryNote.party : '—', customer: '', sharedCustomer: null,
     invoice: '—', lines: null, total: null, discrepancies: 0, readWarn: 0, reason: s.reason, code: s.code
@@ -1925,7 +1945,7 @@ function renderOverview(){
   overviewEl.querySelector('#ovExport').addEventListener('click', exportDaySummary);
   overviewEl.querySelector('#ovWa').addEventListener('click', e => copyCanvasToClipboard(drawDayImage, e.currentTarget, 'day-summary-' + fmtDate(new Date()) + '.png'));
   overviewEl.querySelector('#ovSendLog').addEventListener('click', e => {
-    const n = sendBillsToSheetLog(window.__records.slice());
+    const n = sendBillsToSheetLog(tabRecords());
     e.target.textContent = n ? `✓ ${n} queued for the sheet` : 'Nothing to send';
     setTimeout(() => { e.target.textContent = '📤 Send all to Audit Log'; }, 2200);
   });
@@ -1987,17 +2007,20 @@ function downloadCsv(rows, filename){
 }
 
 function clearAllBills(){
-  const n = window.__records.length + window.__skipped.length;
-  if(!n && !excelWorkbookData) return;
-  if(!confirm(`Clear all — remove ${n} bill file(s) and the ${BRANCH.text.excelMain.replace(/^Drop /, '').replace(/ here$/, '')} and start fresh?\n\nThe discrepancy log, Parser report, rules and the Google Sheet data are kept.`)) return;
-  window.__records = [];
-  window.__skipped = [];
-  excelWorkbookData = null; excelFileName = null; excelLoadedAt = null;
-  showExcelStatus();
+  const local = currentView === 'local';
+  const n = tabRecords().length + window.__skipped.filter(inTab).length;
+  if(!n && (local || !excelWorkbookData)) return;
+  const what = local ? `${n} local sales bill file(s)` : `${n} bill file(s) and the ${BRANCH.text.excelMain.replace(/^Drop /, '').replace(/ here$/, '')}`;
+  if(!confirm(`Clear all — remove ${what} and start fresh?\n\nThe ${local ? 'dispatch-list bills' : 'local sales bills'}, discrepancy log, Parser report, rules and the Google Sheet data are kept.`)) return;
+  const gone = new Set(tabRecords().map(r => r.id));
+  window.__records = window.__records.filter(r => !gone.has(r.id));
+  window.__skipped = window.__skipped.filter(x => !inTab(x));
+  document.querySelectorAll('.invoice-card').forEach(c => { if(gone.has(c.dataset.recordId)) c.remove(); });
+  skippedArea.querySelectorAll('[data-entry-id]').forEach(b => { if((b.dataset.local === '1') === local) b.remove(); });
+  if(!local){ excelWorkbookData = null; excelFileName = null; excelLoadedAt = null; showExcelStatus(); }
   document.getElementById('restoredNote').innerHTML = '';
-  uploadSeq = 0; lastJumpSeq = 0; lastBatchSummary = null;
-  resultsEl.innerHTML = '';
-  skippedArea.innerHTML = '';
+  if(!window.__records.length && !window.__skipped.length) uploadSeq = 0;
+  lastJumpSeq = 0; lastBatchSummary = null;
   updateExportBarVisibility();
   renderTally();
   renderOverview();
@@ -2171,7 +2194,10 @@ function applyMasterToRow(row){
   const it = masterSingleForDescription(row.description);
   row.masterName = it ? it.name : null;
   if(!it) return;
-  const cat = mapMasterCategory(it.category, row.unit);
+  let cat = mapMasterCategory(it.category, row.unit);
+  // Never let the list turn a line billed per sq.ft / kg into a sheet or roll (height × length) line.
+  const bu = unitKey(row.unit);
+  if(cat && /sheet|roll/.test(cat) && ['sqft', 'kg', 'sqmtr', 'mtr'].includes(bu)) cat = null;
   if(cat && rules[cat]) row.category = cat;
   if(it.ht != null) row.heightFt = it.ht;
   if(it.len != null){
@@ -2584,12 +2610,13 @@ function renderMasterPanel(){
       ${admin ? `<button type="button" class="bar-btn primary" id="mAdd">＋ Add</button><button type="button" class="bar-btn" id="mPaste">📋 Paste from Excel</button>` : ''}
       <button type="button" class="bar-btn" id="mExport">⬇ Export (CSV)</button>
       ${masterTab === 'items' && admin && !list.length && branchBuiltInItems().length ? `<button type="button" class="bar-btn" id="mSeed">Fill with the built-in list (${branchBuiltInItems().length})</button>` : ''}
+      ${masterTab !== 'slab' && admin ? `<button type="button" class="bar-btn" id="mTsImport" title="Fill this list from a TallySync backup (.json) — only adds and fills gaps">⇪ Import TallySync backup</button><input type="file" id="mTsFile" accept=".json,application/json" hidden>` : ''}
       ${masterTab !== 'slab' ? `<button type="button" class="bar-btn" id="mRematch" title="Match every open bill again using the current lists">↻ Re-match open bills</button>` : ''}
     </div>
     ${admin ? '' : `<p class="master-note">You are logged in as a checker — only an admin can change this list.</p>`}
     ${syncState.roleNote ? `<p class="master-note" style="color:var(--red);">⚠ ${escapeHtml(syncState.roleNote)}</p>` : ''}
     <div id="mForm"></div>
-    <div class="code-scroll" style="max-height:62vh;"><table class="code-table" id="mTable"></table></div>`;
+    <div class="m-scroll"><table class="m-table" id="mTable"></table></div>`;
   masterPanel.innerHTML = html;
 
   const search = document.getElementById('mSearch');
@@ -2599,6 +2626,9 @@ function renderMasterPanel(){
   on('mPaste', openPasteBox);
   on('mExport', exportMaster);
   on('mRematch', rematchOpenBills);
+  on('mTsImport', () => document.getElementById('mTsFile').click());
+  const tsf = document.getElementById('mTsFile');
+  if(tsf) tsf.addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if(f) readTallySyncBackup(f); });
   on('mSeed', async e => {
     const builtIn = branchBuiltInItems();
     if(!confirm(`Write the built-in list (${builtIn.length} items) into the empty ${def.sheet()} tab?`)) return;
@@ -2623,10 +2653,15 @@ function renderMasterTable(){
   const cell = (f, r) => {
     const v = f.calc ? f.calc(r) : r[f.k];
     const txt = v === null || v === undefined ? '' : (f.num && isFinite(v) ? String(v) : String(v));
-    return `<td${f.wide ? ' style="white-space:normal;word-break:break-word;"' : ''}${f.k === 'code' ? ' class="code"' : ''}>${escapeHtml(txt)}${f.k === 'maxPct' && txt === '' ? `<span style="color:var(--ink-soft);">${SLAB_SET.maxPct}</span>` : ''}</td>`;
+    const cls = [f.num || f.k === 'max' ? 'num' : '', f.k === 'code' || f.k === 'from' || f.k === 'unit' ? 'mono' : '', f.k === 'name' || f.k === 'item' ? 'main' : '', f.ro ? 'muted' : ''].filter(Boolean).join(' ');
+    return `<td${cls ? ` class="${cls}"` : ''}>${escapeHtml(txt)}${f.k === 'maxPct' && txt === '' ? `<span class="muted">${SLAB_SET.maxPct}</span>` : ''}</td>`;
   };
-  table.innerHTML = `<thead><tr>${def.fields.map(f => `<th${f.w ? ` style="width:${f.w}px"` : ''}>${escapeHtml(f.label || hdr(f))}</th>`).join('')}${admin ? '<th style="width:118px;"></th>' : ''}</tr></thead>
-    <tbody>${shown.map(({ r, i }) => `<tr data-i="${i}">${def.fields.map(f => cell(f, r)).join('')}${admin ? `<td style="white-space:nowrap;">
+  const colPx = f => f.w ? f.w + 24 : (f.k === 'name' || f.k === 'item') ? 330 : f.wide ? 280 : 150;
+  const actPx = admin ? (masterTab === 'slab' ? 170 : 84) : 0;
+  table.style.minWidth = (def.fields.reduce((t, f) => t + colPx(f), 0) + actPx) + 'px';
+  table.innerHTML = `<colgroup>${def.fields.map(f => `<col style="width:${colPx(f)}px">`).join('')}${admin ? `<col style="width:${actPx}px">` : ''}</colgroup>
+    <thead><tr>${def.fields.map(f => `<th class="${f.num || f.k === 'max' ? 'num' : ''}">${escapeHtml(f.label || hdr(f))}</th>`).join('')}${admin ? '<th></th>' : ''}</tr></thead>
+    <tbody>${shown.map(({ r, i }) => `<tr data-i="${i}">${def.fields.map(f => cell(f, r)).join('')}${admin ? `<td class="act">
         <button type="button" class="fill-btn" data-act="edit" title="Edit">✎</button>
         ${masterTab === 'slab' ? '<button type="button" class="fill-btn" data-act="newrate" title="New rate from today — keeps this one for older bills">＋ New rate</button>' : ''}
         <button type="button" class="fill-btn" data-act="del" title="Delete">🗑</button></td>` : ''}</tr>`).join('')
@@ -2762,6 +2797,116 @@ function openPasteBox(){
     renderMasterPanel();
     const m2 = document.getElementById('mForm');
     if(m2) m2.innerHTML = `<p class="sync-msg ok">✓ ${added} added, ${changed} updated — being saved to the sheet.</p>`;
+  });
+}
+// ---- TallySync backup (.json) → Item master, Party master and bundle weights -------------------
+const TS_CAT = {
+  ekm: { sheet_pcs: 'sheet_pics', roll_mesh: 'roll_mesh', chainlink: 'roll_mesh', sqft: 'direct', kg_bundle: 'direct', kg_direct: 'direct', flat: 'direct_flat', flat_5: 'direct_5pct' },
+  clt: { sheet_pcs: 'sheet', roll_mesh: 'roll', chainlink: 'roll', kg_bundle: 'directKg', kg_direct: 'directKg', flat: 'directNos', flat_5: 'direct5' },
+};
+// An item priced as a sheet or roll in TallySync but BILLED per sq.ft or kg is a direct item here:
+// the bill's rate is already per sq.ft / kg, so no height × length multiplying.
+function tsCategoryLabel(i, catMap){
+  let key = catMap[i.cat];
+  const u = unitKey(i.unit);
+  if(['sqft', 'kg', 'sqmtr', 'mtr'].includes(u) && key && /sheet|roll/.test(key)) key = BRANCH.key === 'ekm' ? (u === 'kg' || u === 'sqft' ? 'direct' : 'direct_flat') : null;
+  return key && rules[key] ? rules[key].label : '';
+}
+function readTallySyncBackup(file){
+  const box = document.getElementById('mForm');
+  const fr = new FileReader();
+  fr.onload = () => {
+    let d;
+    try{ d = JSON.parse(fr.result); }catch(e){ box.innerHTML = `<p class="sync-msg bad">⚠ "${escapeHtml(file.name)}" is not a TallySync backup (not JSON).</p>`; return; }
+    if(!d || (!Array.isArray(d.items) && !Array.isArray(d.parties))){ box.innerHTML = `<p class="sync-msg bad">⚠ "${escapeHtml(file.name)}" has no items or parties — is it the TallySync backup?</p>`; return; }
+    showTallySyncPreview(d, file.name);
+  };
+  fr.readAsText(file);
+}
+function tsBundleNew(d){
+  if(BRANCH.key !== 'ekm' || typeof bundleRules === 'undefined' || !Array.isArray(d.bundleRules)) return [];
+  const have = new Set(bundleRules.map(r => normalizeForMatch(r.match)));
+  return d.bundleRules.filter(r => r && r.match && isFinite(r.weight) && !have.has(normalizeForMatch(r.match)))
+    .map(r => ({ label: String(r.label || r.match), match: normalizeForMatch(r.match), weight: +r.weight }));
+}
+function tsRuleDiffs(d){
+  if(!d.rules) return [];
+  const out = [];
+  Object.keys(d.rules).forEach(k => {
+    const key = (TS_CAT[BRANCH.key] || {})[k], mine = key && rules[key];
+    if(!mine) return;
+    const t = d.rules[k];
+    const myTax = mine.tax !== undefined ? mine.tax : mine.taxPct;
+    if(isFinite(t.tax) && +t.tax !== +myTax) out.push(`${t.label || k}: TallySync tax ${t.tax}% vs here ${myTax}%`);
+    if(t.dim && isFinite(t.lengthFt) && mine.lengthFt && +t.lengthFt !== +mine.lengthFt && k !== 'chainlink') out.push(`${t.label || k}: TallySync length ${t.lengthFt} ft vs here ${mine.lengthFt} ft`);
+  });
+  return out;
+}
+function showTallySyncPreview(d, fileName){
+  const box = document.getElementById('mForm');
+  const s = d.settings || {};
+  const items = Array.isArray(d.items) ? d.items.filter(i => i && i.name) : [];
+  const parties = Array.isArray(d.parties) ? d.parties.filter(p => p && p.name) : [];
+  const bNew = tsBundleNew(d), diffs = tsRuleDiffs(d);
+  const otherBranch = s.gstin && !BRANCH.gstins[s.gstin];
+  box.innerHTML = `<div style="background:var(--paper-raised);border:1px solid var(--gold);border-radius:4px;padding:14px 16px;margin-bottom:12px;font-size:13px;line-height:1.6;">
+    <b>TallySync backup</b> · ${escapeHtml(fileName)}${s.company ? ` · ${escapeHtml(s.company)}` : ''}${s.gstin ? ` (${escapeHtml(s.gstin)})` : ''}<br>
+    ${otherBranch ? `<span style="color:var(--red);">⚠ This backup's GSTIN is not one of ${escapeHtml(BRANCH.name)}'s — check you are on the right branch.</span><br>` : ''}
+    Into <b>${escapeHtml(BRANCH.key === 'clt' ? 'Calicut · Kannur' : 'Ernakulam')}</b>. It only adds and fills empty cells — nothing typed in the sheet is overwritten. If TallySync has the same code under a new name (a rename in Tally), the new name becomes the item name and the old one is kept under "Other codes / spellings".
+    <div style="margin:8px 0;">
+      <label><input type="checkbox" id="tsItems" ${items.length ? 'checked' : 'disabled'}> ${items.length} items → Item master (code, name, category, unit, size, bundle kg, GST %, other spellings)</label><br>
+      <label><input type="checkbox" id="tsParties" ${parties.length ? 'checked' : 'disabled'}> ${parties.length} parties → Party master (name, rate-sheet names, place)</label><br>
+      <label><input type="checkbox" id="tsBundle" ${bNew.length ? 'checked' : 'disabled'}> ${bNew.length ? `${bNew.length} new bundle weight${bNew.length === 1 ? '' : 's'} → Rules (${bNew.map(b => escapeHtml(b.label) + ' ' + b.weight + ' kg').join(', ')})` : 'Bundle weights: nothing new'}</label>
+    </div>
+    <div style="color:var(--ink-soft);">Category rules: ${diffs.length ? '<span style="color:var(--amber);">differ — not changed, check them in Rules: ' + diffs.map(escapeHtml).join(' · ') + '</span>' : 'the same as here ✓ (tax %, sheet/roll lengths)'}</div>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap;"><button type="button" class="bar-btn primary" id="tsGo">Import</button><button type="button" class="bar-btn" id="tsCancel">Cancel</button><span id="tsMsg" class="sync-msg" style="margin:0;"></span></div>
+  </div>`;
+  box.querySelector('#tsCancel').addEventListener('click', () => { box.innerHTML = ''; });
+  box.querySelector('#tsGo').addEventListener('click', async e => {
+    const msg = box.querySelector('#tsMsg'), btn = e.currentTarget;
+    btn.disabled = true;
+    const report = [];
+    try{
+      if(box.querySelector('#tsItems').checked){
+        msg.textContent = 'Importing items…';
+        const codeCount = {};
+        items.forEach(i => { const k = codeKey(i.code); if(k) codeCount[k] = (codeCount[k] || 0) + 1; });
+        const catMap = TS_CAT[BRANCH.key] || {};
+        const rowsOut = items.map(i => ({
+          name: String(i.name).trim(),
+          code: codeCount[codeKey(i.code)] === 1 ? String(i.code).trim() : null,
+          values: { 'Code': i.code ? String(i.code).trim() : '', 'Category': tsCategoryLabel(i, catMap),
+            'Unit': i.unit || '', 'Ht ft': i.h ?? '', 'Len ft': i.l ?? '', 'Bundle kg': i.bundle ?? '', 'GST %': i.gst ?? '' },
+          lists: splitList(i.variants)
+        }));
+        const r = await api('importRows', { tab: BRANCH.key + 'Items', rows: rowsOut, opts: { source: 'TallySync' } });
+        report.push(`Items: ${r.added} added, ${r.updated} filled in${r.renamed ? `, ${r.renamed} renamed` : ''}, ${r.unchanged} already complete`);
+      }
+      if(box.querySelector('#tsParties').checked){
+        const chunk = 1200; let a = 0, u = 0, same = 0;
+        for(let k = 0; k < parties.length; k += chunk){
+          msg.textContent = `Importing parties… ${Math.min(k + chunk, parties.length)} / ${parties.length}`;
+          const rowsOut = parties.slice(k, k + chunk).map(p => ({ name: String(p.name).trim(), values: { 'Place': p.place || '' }, lists: splitList(p.alias) }));
+          const r = await api('importRows', { tab: BRANCH.key + 'Parties', rows: rowsOut, opts: { source: 'TallySync' } });
+          a += r.added; u += r.updated; same += r.unchanged;
+        }
+        report.push(`Parties: ${a} added, ${u} filled in, ${same} already complete`);
+      }
+      if(box.querySelector('#tsBundle').checked && bNew.length){
+        bNew.forEach(b => bundleRules.push(b));
+        savePersisted();
+        renderRulesPanel();
+        report.push(`Bundle weights: ${bNew.length} added`);
+      }
+      msg.textContent = 'Syncing…';
+      await fullSync();
+      box.innerHTML = `<p class="sync-msg ok">✓ ${report.map(escapeHtml).join(' · ') || 'Nothing selected.'}</p>`;
+      renderMasterPanel();
+      const b2 = document.getElementById('mForm'); if(b2) b2.innerHTML = `<p class="sync-msg ok">✓ ${report.map(escapeHtml).join(' · ')}</p>`;
+    }catch(err){
+      msg.className = 'sync-msg bad'; msg.textContent = '⚠ ' + err.message + (report.length ? ' (done so far: ' + report.join(' · ') + ')' : '');
+      btn.disabled = false;
+    }
   });
 }
 function exportMaster(){
@@ -2902,6 +3047,7 @@ function applyBranchTexts(){
   rulesToggle.title = (t.rulesToggle || 'Rules').replace(/^\S+\s/, '');
   codesToggle.title = (t.codesToggle || 'Codes').replace(/^\S+\s/, '');
   set('sideBranch', BRANCH.key === 'clt' ? 'CALICUT · KANNUR' : 'ERNAKULAM');
+  applyTabTexts();
   set('sideFoot', APP_VERSION + ' · ' + (BRANCH.key === 'clt' ? 'Calicut · Kannur' : 'Ernakulam'));
   document.querySelectorAll('[data-branch-btn]').forEach(b => {
     const on = b.dataset.branchBtn === BRANCH.key;
@@ -2983,6 +3129,7 @@ function unitKey(u){
   if(/^(roll|rolls|rol)$/.test(t)) return 'roll';
   if(/^(bundle|bundles|bdl|bdls)$/.test(t)) return 'bundle';
   if(/^(mtr|mtrs|m|meter|meters|metre|metres|rmt)$/.test(t)) return 'mtr';
+  if(/^(sqmtr|sqm|sqmt|sqmeter|sqmetre|sqmtrs)$/.test(t)) return 'sqmtr';
   if(/^(ft|feet|rft|runningfeet)$/.test(t)) return 'ft';
   if(/^(box|boxes)$/.test(t)) return 'box';
   if(/^(set|sets)$/.test(t)) return 'set';
@@ -3131,7 +3278,8 @@ function updateSlabStatus(){
   const nav = (id, n) => { const e = document.getElementById(id); if(e) e.textContent = n ? String(n) : ''; };
   nav('navItems', MASTER.items.length); nav('navParties', MASTER.parties.length);
   nav('navSlab', new Set(SLAB.map(r => nameKey(r.item))).size);
-  nav('navBills', window.__records.length + window.__skipped.length);
+  nav('navBills', window.__records.filter(r => !r.local).length + window.__skipped.filter(x => !x.local).length);
+  nav('navLocal', window.__records.filter(r => r.local).length + window.__skipped.filter(x => x.local).length);
 }
 function recalcAllCards(){
   document.querySelectorAll('.invoice-card').forEach(c => recalcCard(c));
@@ -3313,10 +3461,10 @@ function drawBillImage(record){
   return waCrop(c, y);
 }
 function drawDayImage(){
-  const recs = window.__records.slice().sort((a, b) => a.seq - b.seq);
-  const skipped = window.__skipped.filter(s => s.kind === 'failed');
+  const recs = tabRecords().sort((a, b) => a.seq - b.seq);
+  const skipped = window.__skipped.filter(s => s.kind === 'failed' && inTab(s));
   const { c, ctx } = waCanvas(400 + recs.length * 64 + skipped.length * 40);
-  let y = waHeader(ctx, `INVOICE AUDIT · ${(BRANCH.key === 'clt' ? 'CALICUT · KANNUR' : 'ERNAKULAM')} · DAY SUMMARY`, fmtDate(new Date()), 'ok') + 22;
+  let y = waHeader(ctx, `INVOICE AUDIT · ${(BRANCH.key === 'clt' ? 'CALICUT · KANNUR' : 'ERNAKULAM')} · ${currentView === 'local' ? 'LOCAL SALES' : 'DISPATCH LIST'} · DAY SUMMARY`, fmtDate(new Date()), 'ok') + 22;
   const n = k => recs.filter(r => r.statusKind === k).length;
   const loss = recs.reduce((t, r) => t + (r.slabLoss || 0), 0);
   ctx.fillStyle = WA.ink; ctx.font = '700 24px Fraunces, Georgia, serif';
