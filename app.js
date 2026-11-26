@@ -4,7 +4,7 @@
 // per browser/machine so an "updated" notice can be shown after an update (see
 // loadPersisted()). This is purely a tracking label — it has no effect on parsing
 // or matching logic.
-const APP_VERSION = 'v8.5';
+const APP_VERSION = 'v8.7';
 // The Invoice Audit Google Sheet — opened from "Sync & login", the sidebar and the master screens.
 // The sheet script also reports its own address on every sync, which takes over if it ever moves.
 // v8.3: the company's Apps Script web app is built in — nobody has to paste it. (Redeploy with
@@ -1342,7 +1342,8 @@ function recalcCard(card){
     const showPending = result.pending && !result.qtyMismatch && !lc.flagged;
     const gap = lc.slabGap && !lc.flagged && !showPending;
     statusCell.className = 'num status ' + (showPending ? 'pending' : lc.flagged ? 'bad' : gap ? 'pending' : 'ok');
-    statusCell.textContent = showPending ? '…' : lc.flagged ? '✗' : gap ? '❓' : '✓';
+    if(gap) statusCell.innerHTML = '<span class="shot-hide">❓</span><span class="shot-only st-ok">✓</span>';
+    else statusCell.textContent = showPending ? '…' : lc.flagged ? '✗' : '✓';
     statusCell.title = gap ? 'No rate slab to check this line against' : '';
     renderSlabCell(tr, sl);
     if(lc.slabGap) slabGaps++;
@@ -1447,7 +1448,7 @@ function recalcCard(card){
   else if(anyPending){ stamp.classList.add('pending'); stamp.textContent = 'Awaiting rates'; statusKind = 'rates'; }
   else if(anyFlag){ stamp.classList.add('bad'); stamp.textContent = `Discrepancy (${discrepancyCount}) ⚠`; statusKind = 'discrepancy'; }
   else if(readCheckOpen){ stamp.classList.add('pending'); stamp.textContent = 'Check the read ⚠'; statusKind = 'readcheck'; }
-  else if(slabGaps && SLAB_SET.missingBlocks){ stamp.classList.add('pending'); stamp.textContent = `Slab missing (${slabGaps}) ❓`; statusKind = 'slab'; }
+  else if(slabGaps && SLAB_SET.missingBlocks){ stamp.classList.add('pending', 'slab-only'); stamp.innerHTML = `<span class="shot-hide">Slab missing (${slabGaps}) ❓</span><span class="shot-only">Verified ✓</span>`; statusKind = 'slab'; }
   else{ stamp.classList.add('ok'); stamp.textContent = 'Verified ✓'; statusKind = 'verified'; }
 
   const isClean = statusKind === 'verified';
@@ -1455,6 +1456,7 @@ function recalcCard(card){
   record.currentDiscrepancyCount = discrepancyCount;
   record.currentlyClean = isClean;
   card.classList.toggle('clean-bill', isClean);
+  card.classList.toggle('slab-only', statusKind === 'slab');   // screenshot mode shows it as verified
   renderTally();
 }
 
@@ -1919,7 +1921,7 @@ function renderOverview(){
       <td class="code">${escapeHtml(r.invoice)}</td>
       <td class="num">${r.lines !== null ? r.lines : ''}</td>
       <td class="num">${r.total !== null && r.total !== undefined ? fmt(r.total) : ''}</td>
-      <td><span class="ov-status ${meta.cls}" ${r.reason ? `title="${escapeHtml(r.reason)}"` : ''}>${status}</span>${r.kind === 'failed' && r.code ? ` <span class="code-tag" title="${escapeHtml(r.reason || '')}">${escapeHtml(r.code)}</span>` : ''} ${extra.join(' ')}</td>
+      <td>${r.kind === 'slab' ? `<span class="ov-status pending shot-hide">${status}</span><span class="ov-status ok shot-only">Verified ✓</span>` : `<span class="ov-status ${meta.cls}" ${r.reason ? `title="${escapeHtml(r.reason)}"` : ''}>${status}</span>`}${r.kind === 'failed' && r.code ? ` <span class="code-tag" title="${escapeHtml(r.reason || '')}">${escapeHtml(r.code)}</span>` : ''} ${extra.join(' ')}</td>
     </tr>`;
   }).join('');
 
@@ -2339,9 +2341,9 @@ function sendBillsToSheetLog(records){
     party: r.parsed.partyName || '',
     customer: r.local ? '' : (r.selectedBlockName || ''),
     file: r.filename,
-    status: r.statusKind === 'discrepancy' ? `Discrepancy (${r.currentDiscrepancyCount || 0})` : (STATUS_META[r.statusKind] || STATUS_META.name).label,
+    status: shareKind(r) === 'discrepancy' ? `Discrepancy (${r.currentDiscrepancyCount || 0})` : (STATUS_META[shareKind(r)] || STATUS_META.name).label,
     count: r.currentDiscrepancyCount || 0,
-    details: gatherBillDiscrepancies(r).concat(gatherSlabGaps(r).map(g => '❓ ' + g)),
+    details: gatherBillDiscrepancies(r),
     slabLoss: r.slabLoss || 0,
     type: r.local ? 'Local sale' : 'Loading list',
     version: APP_VERSION
@@ -2598,7 +2600,7 @@ const MASTER_DEFS = {
   slab: {
     label: 'Rate slab', sheet: () => 'Rate Slab', tab: () => 'slab',
     list: () => MASTER_ALL.slab,
-    desc: () => `ONE safety slab for every branch, rates INCLUDING GST. Every bill line — loading-list and local sales — is checked against it: below the minimum is flagged as a loss, above the maximum as billed too high. The maximum is the minimum + the item's Max % (blank = the default below). To change a rate and keep the history, use "＋ New rate": old bills keep being checked against the rate valid on their date.`,
+    desc: () => `ONE safety slab for every branch, rates INCLUDING GST. Every bill line — loading-list and local sales — is checked against it: below the minimum is flagged as a loss, above the maximum as billed too high. The maximum is the minimum + the item's Max % (blank = the default below). Like the loading list, the slab follows each item's rate rule: for sheet and roll items type the rate <b>per sq.ft</b> — a bill per piece / roll is checked against rate × height × length from the Item master. To change a rate and keep the history, use "＋ New rate": old bills keep being checked against the rate valid on their date.`,
     fields: [
       { k: 'item', h: 'Tally item name', req: true }, { k: 'unit', h: 'Unit', w: 64, req: true },
       { k: 'gst', h: 'GST %', w: 52, num: true }, { k: 'min', h: 'Minimum rate (incl GST)', label: 'Minimum ₹ (incl GST)', w: 90, num: true, req: true },
@@ -2730,8 +2732,10 @@ function masterNeeds(tab, r){
     if(!String(r.unit || '').trim()) out.push('no unit');
     if(r.gst === null || r.gst === undefined || r.gst === '') out.push('no GST %');
     const k = mapMasterCategory(r.category, r.unit), keys = BRANCH.categoryKeys || {};
-    if(k && (k === keys.sheet || k === keys.roll) && !(r.ht > 0)) out.push('no height');
-    if(k && k === keys.sheet && !(r.len > 0)) out.push('no length');
+    // Height / length: the item master, else read from the name the same way a bill line is.
+    const ht = r.ht > 0 ? r.ht : (typeof guessHeightFt === 'function' ? guessHeightFt(r.name) : null);
+    if(k && (k === keys.sheet || k === keys.roll) && !(ht > 0)) out.push('no height');
+    if(k && k === keys.sheet && !(r.len > 0) && !((rules[k] || {}).lengthFt > 0)) out.push('no length');
   }else if(tab === 'slab'){
     const n = nameKey(r.item);
     const it = ['ekm', 'clt'].map(b => ((MASTER_ALL.branches[b] || {}).items || []).find(x => nameKey(x.name) === n)).find(Boolean);
@@ -2802,6 +2806,72 @@ function renderMasterPanel(){
   renderMasterTable();
   if(masterEdit) renderMasterForm();
 }
+// ---- Column widths: fitted to what is in the column (capped, long text wraps); drag a header
+// edge to resize — remembered on this PC; double-click the edge to fit again.
+var _measureCtx = null, _cellFonts = null;
+// The fonts the table really uses (read once from a hidden sample row).
+function cellFonts(){
+  if(_cellFonts) return _cellFonts;
+  const t = document.createElement('table'); t.className = 'm-table'; t.style.cssText = 'position:absolute;visibility:hidden;left:-9999px;';
+  t.innerHTML = '<thead><tr><th>X</th></tr></thead><tbody><tr><td>x</td><td class="main">x</td><td class="mono">x</td><td class="num">x</td></tr></tbody>';
+  (document.getElementById('masterPanel') || document.body).appendChild(t);
+  const f = el => getComputedStyle(el).font;
+  const tds = t.querySelectorAll('td');
+  _cellFonts = { plain: f(tds[0]), main: f(tds[1]), mono: f(tds[2]), num: f(tds[3]), head: f(t.querySelector('th')) };
+  t.remove();
+  if(document.fonts && document.fonts.status !== 'loaded') _cellFonts = Object.assign({ temp: true }, _cellFonts);
+  const out = _cellFonts; if(out.temp) _cellFonts = null;
+  return out;
+}
+function textPx(t, kind){
+  if(!_measureCtx) _measureCtx = document.createElement('canvas').getContext('2d');
+  _measureCtx.font = cellFonts()[kind] || cellFonts().plain;
+  return _measureCtx.measureText(String(t)).width;
+}
+function colWidthsSaved(){ try{ return JSON.parse(localStorage.getItem('ia.colw') || '{}'); }catch(e){ return {}; } }
+function smartColWidths(def, rows){
+  const saved = colWidthsSaved()[masterTab] || {}, out = {};
+  const cap = f => (f.k === 'name' || f.k === 'item') ? 460 : f.wide ? 360 : f.k === 'code' ? 240 : f.k === 'source' || f.k === 'by' ? 190 : 230;
+  const sample = rows.slice(0, 300);
+  def.fields.forEach(f => {
+    if(saved[f.k]){ out[f.k] = saved[f.k]; return; }
+    const head = textPx(String(f.label || hdr(f)).toUpperCase(), 'head') * 1.12 + 30;
+    const kind = (f.k === 'name' || f.k === 'item') ? 'main' : (f.num || f.k === 'max') ? 'num' : ['code', 'from', 'unit'].includes(f.k) ? 'mono' : 'plain';
+    let w = 0;
+    sample.forEach(r => {
+      const v = f.calc ? f.calc(r) : r[f.k];
+      if(v === null || v === undefined || v === '') return;
+      const t = textPx(v, kind);
+      if(t > w) w = t;
+    });
+    const needW = (f.k === 'name' || f.k === 'item') && masterTab !== 'parties' ? 200 : 0;   // room for the ⚠ tag
+    out[f.k] = Math.round(Math.max(head, Math.min(cap(f), Math.max(w, needW) + 24), f.num ? 56 : 70));
+  });
+  return f => out[f.k];
+}
+function wireColGrips(table){
+  table.querySelectorAll('.col-grip').forEach(g => {
+    g.addEventListener('mousedown', e => {
+      e.preventDefault(); e.stopPropagation();
+      const col = table.querySelectorAll('col')[+g.dataset.ci];
+      const startX = e.clientX, startW = col.getBoundingClientRect().width || parseFloat(col.style.width), startT = table.getBoundingClientRect().width;
+      document.body.style.cursor = 'col-resize';
+      const move = ev => { const w = Math.max(50, Math.round(startW + ev.clientX - startX)); col.style.width = w + 'px'; table.style.minWidth = Math.round(startT + w - startW) + 'px'; };
+      const up = () => {
+        document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); document.body.style.cursor = '';
+        const all = colWidthsSaved(); all[masterTab] = Object.assign({}, all[masterTab], { [g.dataset.k]: Math.round(parseFloat(col.style.width)) });
+        try{ localStorage.setItem('ia.colw', JSON.stringify(all)); }catch(err){}
+      };
+      document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+    });
+    g.addEventListener('dblclick', e => {
+      e.stopPropagation();
+      const all = colWidthsSaved(); if(all[masterTab]) delete all[masterTab][g.dataset.k];
+      try{ localStorage.setItem('ia.colw', JSON.stringify(all)); }catch(err){}
+      renderMasterTable();
+    });
+  });
+}
 // The rows the current search, filters and "Needs attention" leave on screen.
 function masterShownRows(all){
   const def = MASTER_DEFS[masterTab], q = masterSearch.trim().toLowerCase(), cf = masterFilter[masterTab] || {};
@@ -2858,17 +2928,18 @@ function renderMasterTable(){
     const need = (f.k === 'name' || f.k === 'item') && masterTab !== 'parties' ? masterNeeds(masterTab, r) : [];
     return `<td${cls ? ` class="${cls}"` : ''}>${escapeHtml(txt)}${f.k === 'maxPct' && txt === '' ? `<span class="muted">${SLAB_SET.maxPct}</span>` : ''}${need.length ? `<br><span class="need-tag" title="Fill these in with ✎">⚠ ${escapeHtml(need.join(' · '))}</span>` : ''}</td>`;
   };
-  const colPx = f => f.w ? f.w + 24 : (f.k === 'name' || f.k === 'item') ? 330 : f.wide ? 280 : 150;
+  const colPx = smartColWidths(def, shown.map(x => x.r));
   const actPx = admin ? (masterTab === 'slab' ? 170 : 84) : 0;
   table.style.minWidth = (def.fields.reduce((t, f) => t + colPx(f), 0) + actPx) + 'px';
   table.innerHTML = `<colgroup>${def.fields.map(f => `<col style="width:${colPx(f)}px">`).join('')}${admin ? `<col style="width:${actPx}px">` : ''}</colgroup>
-    <thead><tr>${def.fields.map(f => `<th class="${f.num || f.k === 'max' ? 'num' : ''}">${escapeHtml(f.label || hdr(f))}</th>`).join('')}${admin ? '<th></th>' : ''}</tr></thead>
+    <thead><tr>${def.fields.map((f, ci) => `<th class="${f.num || f.k === 'max' ? 'num' : ''}">${escapeHtml(f.label || hdr(f))}<span class="col-grip" data-ci="${ci}" data-k="${f.k}" title="Drag to resize · double-click to fit"></span></th>`).join('')}${admin ? '<th></th>' : ''}</tr></thead>
     <tbody>${shown.map(({ r, i }) => `<tr data-i="${i}">${def.fields.map(f => cell(f, r)).join('')}${admin ? `<td class="act">
         <button type="button" class="fill-btn" data-act="edit" title="Edit">✎</button>
         ${masterTab === 'slab' ? '<button type="button" class="fill-btn" data-act="newrate" title="New rate from today — keeps this one for older bills">＋ New rate</button>' : ''}
         <button type="button" class="fill-btn" data-act="del" title="Delete">🗑</button></td>` : ''}</tr>`).join('')
       || `<tr><td colspan="${def.fields.length + 1}" style="color:var(--ink-soft);">${all.length ? 'Nothing matches.' : 'Nothing here yet.'}</td></tr>`}
     ${list.length > LIMIT ? `<tr><td colspan="${def.fields.length + 1}" style="color:var(--ink-soft);">… ${list.length - LIMIT} more — type to search.</td></tr>` : ''}</tbody>`;
+  wireColGrips(table);
   table.querySelectorAll('tr[data-i]').forEach(tr => {
     const row = def.list()[+tr.dataset.i];
     tr.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => {
@@ -3389,13 +3460,30 @@ function gstForLine(row, s){
   if(cat && isFinite(cat.taxPct)) return +cat.taxPct;
   return 18;
 }
+// The slab rate follows the item's rate rule, like the loading-list rate: sheets and rolls are
+// rated per sq.ft, so for a bill per piece / roll the slab becomes rate × height × length (the
+// height and length from the item master or the bill, the default length from Rules).
+function slabConversion(row){
+  const keys = BRANCH.categoryKeys || {};
+  if(!(row.category && (row.category === keys.sheet || row.category === keys.roll))) return null;
+  const uk = unitKey(row.unit);
+  if(uk === 'sqft' || uk === 'kg') return null;          // already billed per sq.ft
+  const rule = rules[row.category] || {};
+  const L = (row.customLengthFt !== null && row.customLengthFt !== undefined && row.customLengthFt !== '' && !isNaN(row.customLengthFt)) ? +row.customLengthFt : +rule.lengthFt;
+  const H = row.heightFt !== null && row.heightFt !== undefined && row.heightFt !== '' ? +row.heightFt : NaN;
+  if(!(H > 0) || !(L > 0)) return { missing: true };
+  return { factor: H * L, H, L };
+}
 function slabFor(row, record, result){
   if(!SLAB.length) return null;
   const unitTxt = row.unit || 'unit';
   const cands = slabCandidates(row.description);
   if(!cands.length) return { status: 'none', gap: true, message: 'No rate slab for this item — add it in Rate slab.' };
   const uk = unitKey(row.unit);
-  const sameUnit = cands.filter(r => !unitKey(r.unit) || unitKey(r.unit) === uk);
+  const conv = slabConversion(row);
+  const keys = BRANCH.categoryKeys || {}, sheetRoll = row.category && (row.category === keys.sheet || row.category === keys.roll);
+  // Sheet / roll items: the slab is per sq.ft whatever unit was typed (PCS, ROLL, sq.ft).
+  const sameUnit = cands.filter(r => !unitKey(r.unit) || unitKey(r.unit) === uk || (sheetRoll && ['sqft', 'nos', 'roll'].includes(unitKey(r.unit))));
   if(!sameUnit.length) return { status: 'unit', gap: true, message: `Rate slab is per ${cands[0].unit}, bill is per ${unitTxt} — can't compare.` };
   let d = dateNum(record.parsed.invoiceDate);
   if(!d) d = todayNum();
@@ -3411,18 +3499,21 @@ function slabFor(row, record, result){
   const s = pick[pick.length - 1];
   if(s.min === null || s.min === undefined || !isFinite(s.min)) return { status: 'none', gap: true, message: 'The rate slab row for this item has no minimum rate.' };
 
+  if(conv && conv.missing) return { status: 'none', gap: true, message: `The rate slab is per sq.ft but this ${unitTxt} has no height/length — set them in the Item master.` };
   const g = gstForLine(row, s);
   const billedIncl = r2(row.rate * (1 + g / 100));
-  const min = r2(s.min), max = slabMaxOf(s);
+  const f = conv ? conv.factor : 1;
+  const min = r2(s.min * f), max = r2(slabMaxOf(s) * f);
+  const basis = conv ? ` (₹${fmt(r2(s.min))}–${fmt(slabMaxOf(s))}/sq.ft × ${fmtQty(conv.H)} × ${fmtQty(conv.L)} ft)` : '';
   const tol = SLAB_SET.tol;
   const qty = Number(row.quantity) || 0;
-  const out = { status: 'ok', gap: false, gst: g, billedIncl, min, max, unit: unitTxt, slab: s, diff: 0, pct: 0, total: 0 };
+  const out = { status: 'ok', gap: false, gst: g, billedIncl, min, max, unit: unitTxt, slab: s, diff: 0, pct: 0, total: 0, basis, conv };
   if(billedIncl < min - tol - 1e-9){
     out.status = 'below'; out.diff = r2(min - billedIncl); out.pct = out.diff / min * 100; out.total = r2(out.diff * qty);
-    out.message = `Below rate slab: billed ₹${fmt(billedIncl)} vs minimum ₹${fmt(min)} per ${unitTxt} (incl GST ${g}%) — ₹${fmt(out.diff)} less (${fmtPct(out.pct)}) · loss ₹${fmt(out.total)} on ${fmtQty(qty)} ${unitTxt}`;
+    out.message = `Below rate slab: billed ₹${fmt(billedIncl)} vs minimum ₹${fmt(min)} per ${unitTxt}${basis} (incl GST ${g}%) — ₹${fmt(out.diff)} less (${fmtPct(out.pct)}) · loss ₹${fmt(out.total)} on ${fmtQty(qty)} ${unitTxt}`;
   }else if(billedIncl > max + tol + 1e-9){
     out.status = 'above'; out.diff = r2(billedIncl - max); out.pct = out.diff / max * 100; out.total = r2(out.diff * qty);
-    out.message = `Above rate slab: billed ₹${fmt(billedIncl)} vs maximum ₹${fmt(max)} per ${unitTxt} (incl GST ${g}%) — ₹${fmt(out.diff)} more (${fmtPct(out.pct)}) · ₹${fmt(out.total)} on ${fmtQty(qty)} ${unitTxt}`;
+    out.message = `Above rate slab: billed ₹${fmt(billedIncl)} vs maximum ₹${fmt(max)} per ${unitTxt}${basis} (incl GST ${g}%) — ₹${fmt(out.diff)} more (${fmtPct(out.pct)}) · ₹${fmt(out.total)} on ${fmtQty(qty)} ${unitTxt}`;
   }
   // The loading-list rate itself below the slab: the order was wrong, not only the bill.
   if(result && result.expectedRate !== null && result.expectedRate !== undefined){
@@ -3469,11 +3560,11 @@ function renderSlabCell(tr, sl){
   if(!cell) return;
   cell.className = 'num slab-cell';
   if(!sl){ cell.innerHTML = '—'; cell.title = SLAB.length ? '' : 'The rate slab is empty'; return; }
-  if(sl.gap){ cell.classList.add('gap'); cell.innerHTML = '❓'; cell.title = sl.message; return; }
+  if(sl.gap){ cell.classList.add('gap'); cell.innerHTML = '<span class="shot-hide">❓</span>'; cell.title = sl.message; return; }
   const range = `<span class="sl-range">${fmt(sl.min)} – ${fmt(sl.max)}</span>`;
   if(sl.status === 'ok'){ cell.classList.add('ok'); cell.innerHTML = `✓ ${fmt(sl.billedIncl)}${range}`; }
   else{ cell.classList.add('bad'); cell.innerHTML = `${sl.status === 'below' ? '▼' : '▲'} ${fmt(sl.billedIncl)}${range}`; }
-  cell.title = `Billed ${fmt(sl.billedIncl)} incl GST ${sl.gst}% · slab ${fmt(sl.min)} – ${fmt(sl.max)} per ${sl.unit}`;
+  cell.title = `Billed ${fmt(sl.billedIncl)} incl GST ${sl.gst}% · slab ${fmt(sl.min)} – ${fmt(sl.max)} per ${sl.unit}${sl.basis || ''}`;
 }
 function updateSlabStatus(){
   const el = document.getElementById('slabStatus');
@@ -3564,8 +3655,11 @@ function waBox(ctx, y, lines, kind, head){
   wrapped.forEach(w => { w.forEach(t => { ctx.fillText(t, WA.PAD + 14, yy); yy += 21; }); yy += 5; });
   return y + h + 14;
 }
+// What other people see (WhatsApp pictures, discrepancy log): a missing slab rate is only a note
+// for the person checking, so a bill whose only open point is that counts as verified.
+function shareKind(r){ return r.statusKind === 'slab' ? 'verified' : r.statusKind; }
 function waStamp(record){
-  const k = record.statusKind;
+  const k = shareKind(record);
   if(k === 'verified') return ['VERIFIED ✓', 'ok'];
   if(k === 'discrepancy') return [`DISCREPANCY (${record.currentDiscrepancyCount || 0})`, 'bad'];
   if(k === 'slab') return ['SLAB MISSING ❓', 'warn'];
@@ -3580,10 +3674,10 @@ function drawBillImage(record){
     const g = sl && sl.gst !== undefined ? sl.gst : gstForLine(row, null);
     const billed = sl && sl.billedIncl !== undefined ? sl.billedIncl : r2(row.rate * (1 + g / 100));
     const plan = !local && res.expectedRate !== null && res.expectedRate !== undefined ? r2(res.expectedRate * (1 + g / 100)) : null;
-    const mark = lc.flagged ? '✗' : (res.pending && !res.qtyMismatch) ? '…' : lc.slabGap ? '❓' : '✓';
-    return { row, sl, billed, plan, mark, flagged: lc.flagged, gap: lc.slabGap };
+    const mark = lc.flagged ? '✗' : (res.pending && !res.qtyMismatch) ? '…' : '✓';
+    return { row, sl, billed, plan, mark, flagged: lc.flagged, gap: false };   // missing slab: not shown in the picture
   });
-  const { c, ctx } = waCanvas(1400 + record.items.length * 90 + 60 * (gatherBillDiscrepancies(record).length + gatherSlabGaps(record).length));
+  const { c, ctx } = waCanvas(1400 + record.items.length * 90 + 60 * gatherBillDiscrepancies(record).length);
   const [stampText, stampKind] = waStamp(record);
   let y = waHeader(ctx, `INVOICE AUDIT · ${(BRANCH.key === 'clt' ? 'CALICUT · KANNUR' : 'ERNAKULAM')}${local ? ' · LOCAL SALE' : ''}`, stampText, stampKind) + 22;
   // party + invoice
@@ -3594,10 +3688,10 @@ function drawBillImage(record){
   waWrap(ctx, sub, WA.W - WA.PAD * 2).forEach(t => { ctx.fillText(t, WA.PAD, y); y += 21; });
   y += 14;
   // what is wrong, in words
-  const issues = gatherBillDiscrepancies(record), gaps = gatherSlabGaps(record);
+  const issues = gatherBillDiscrepancies(record), gaps = [];
   if(issues.length) y = waBox(ctx, y, issues, 'bad', `⚠ ${issues.length} discrepanc${issues.length === 1 ? 'y' : 'ies'}${record.slabLoss > 0 ? `  ·  Loss vs rate slab ₹${fmt(record.slabLoss)}` : ''}`);
   if(gaps.length) y = waBox(ctx, y, gaps, 'warn', '❓ Not checked — no rate slab');
-  if(!issues.length && !gaps.length && record.statusKind === 'verified'){
+  if(!issues.length && shareKind(record) === 'verified'){
     ctx.fillStyle = WA.greenBg; waRound(ctx, WA.PAD, y, WA.W - WA.PAD * 2, 44, 6); ctx.fill();
     ctx.fillStyle = WA.green; ctx.font = '700 17px Inter, sans-serif'; ctx.fillText('✓ Every line checked — rates within the slab' + (local ? '' : ' and the loading list'), WA.PAD + 14, y + 13);
     y += 58;
@@ -3633,8 +3727,8 @@ function drawBillImage(record){
     cellText(3, fmt(d.billed), y + 8, `${belowOrAbove ? 700 : 500} 14px "IBM Plex Mono", monospace`, belowOrAbove ? WA.red : WA.ink);
     let ci = 4;
     if(!local){ cellText(4, d.plan !== null ? fmt(d.plan) : '—', y + 8, '500 14px "IBM Plex Mono", monospace', WA.ink); ci = 5; }
-    const slabTxt = !d.sl ? '—' : d.sl.gap ? 'no slab' : `${fmt(d.sl.min)} – ${fmt(d.sl.max)}`;
-    cellText(ci, slabTxt, y + 8, '500 14px "IBM Plex Mono", monospace', d.sl && d.sl.gap ? WA.amber : WA.soft);
+    const slabTxt = !d.sl || d.sl.gap ? '—' : `${fmt(d.sl.min)} – ${fmt(d.sl.max)}`;
+    cellText(ci, slabTxt, y + 8, '500 14px "IBM Plex Mono", monospace', WA.soft);
     if(d.sl && (d.sl.status === 'below' || d.sl.status === 'above'))
       cellText(ci, `${d.sl.status === 'below' ? '▼' : '▲'} ₹${fmt(d.sl.diff)} (${fmtPct(d.sl.pct)})`, y + 28, '700 12.5px Inter, sans-serif', WA.red);
     cellText(ci + 1, d.mark, y + 6, '700 18px Inter, sans-serif', col);
@@ -3670,7 +3764,7 @@ function drawDayImage(){
   const skipped = window.__skipped.filter(s => s.kind === 'failed' && inTab(s));
   const { c, ctx } = waCanvas(400 + recs.length * 64 + skipped.length * 40);
   let y = waHeader(ctx, `INVOICE AUDIT · ${(BRANCH.key === 'clt' ? 'CALICUT · KANNUR' : 'ERNAKULAM')} · ${currentView === 'local' ? 'LOCAL SALES' : 'DISPATCH LIST'} · DAY SUMMARY`, fmtDate(new Date()), 'ok') + 22;
-  const n = k => recs.filter(r => r.statusKind === k).length;
+  const n = k => recs.filter(r => shareKind(r) === k).length;
   const loss = recs.reduce((t, r) => t + (r.slabLoss || 0), 0);
   ctx.fillStyle = WA.ink; ctx.font = '700 24px Fraunces, Georgia, serif';
   ctx.fillText(`${recs.length} bill${recs.length === 1 ? '' : 's'} checked · ${n('verified')} verified · ${n('discrepancy')} with discrepancies`, WA.PAD, y); y += 34;

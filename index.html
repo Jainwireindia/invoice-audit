@@ -127,6 +127,9 @@
   /* ---- v8: master tables ---- */
   .m-scroll{ max-height: 66vh; overflow: auto; border: 1px solid var(--rule-strong); border-radius: 4px; background: var(--paper-raised); }
   .m-table{ width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: 13px; }
+  .m-table th .col-grip{ position: absolute; top: 0; right: 0; width: 7px; height: 100%; cursor: col-resize; border-right: 2px solid transparent; }
+  .m-table th:hover .col-grip{ border-right-color: rgba(0,0,0,.18); }
+  .m-table th .col-grip:hover{ border-right-color: var(--gold); }
   .m-table th{ position: sticky; top: 0; z-index: 1; background: #E9E4D6; text-align: left; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600;
     letter-spacing: .04em; text-transform: uppercase; color: var(--ink-soft); padding: 9px 10px; border-bottom: 1px solid var(--rule-strong); white-space: normal; line-height: 1.3; vertical-align: bottom; }
   :root[data-branch="clt"] .m-table th{ background: #DCE7F0; }
@@ -268,6 +271,16 @@
     display: none;
   }
   body.screenshot-mode .invoice-card.clean-bill{ padding-bottom: 20px; }
+  /* A missing rate slab is only for the person checking: hidden in screenshot mode, bill shown as verified. */
+  .shot-only{ display: none !important; }
+  body.screenshot-mode .shot-only{ display: inline-block !important; }
+  body.screenshot-mode .shot-hide, body.screenshot-mode .slab-gaps, body.screenshot-mode .slab-gap-note{ display: none !important; }
+  body.screenshot-mode .stamp.slab-only{ color: var(--green); background: radial-gradient(circle, var(--green-bg) 60%, transparent 100%); }
+  body.screenshot-mode .status .st-ok{ color: var(--green); }
+  body.screenshot-mode .invoice-card.slab-only .items-table,
+  body.screenshot-mode .invoice-card.slab-only .match-box,
+  body.screenshot-mode .invoice-card.slab-only .total-check-row,
+  body.screenshot-mode .invoice-card.slab-only .card-actions{ display: none; }
 
   /* Long bills used to run past the bottom of the screen, so the party name at the top and a
      discrepancy further down couldn't be captured in one shot. In screenshot mode the item area
