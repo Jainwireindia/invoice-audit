@@ -4,7 +4,7 @@
 // per browser/machine so an "updated" notice can be shown after an update (see
 // loadPersisted()). This is purely a tracking label — it has no effect on parsing
 // or matching logic.
-const APP_VERSION = 'v8.8';
+const APP_VERSION = 'v8.9';
 // The Invoice Audit Google Sheet — opened from "Sync & login", the sidebar and the master screens.
 // The sheet script also reports its own address on every sync, which takes over if it ever moves.
 // v8.3: the company's Apps Script web app is built in — nobody has to paste it. (Redeploy with
@@ -2167,7 +2167,48 @@ function masterSingleForDescription(desc){
   if(a.length > 1 && a.every(x => nameKey(x.name) === nameKey(a[0].name))) return a[0];
   return null;
 }
-function masterItemsForCode(code){ return masterIdx.byCode.get(codeKey(code)) || []; }
+function masterItemsForCode(code){ return narrowForCode(code, masterIdx.byCode.get(codeKey(code)) || [], x => x.name); }
+// A code / spelling written on more than one item (e.g. "40x40x3mmx12x5" on both the 3mm and the
+// 3.2mm sheet): keep only the item(s) whose name carries the code's own numbers — 40, 40, 3, 12, 5
+// fit "40mm x 40mm x 3mm x 12ft x 5ft", not "… 3.2mm …". If the numbers can't tell, all stay.
+function codeNumbers(t){ return (String(t || '').match(/\d+(?:\.\d+)?/g) || []).map(Number); }
+function codeNumberScore(code, name){
+  const want = codeNumbers(code), have = codeNumbers(name), used = new Array(have.length).fill(false);
+  let hits = 0;
+  want.forEach(v => { const i = have.findIndex((h, j) => !used[j] && Math.abs(h - v) < 1e-9); if(i >= 0){ used[i] = true; hits++; } });
+  return { hits, all: want.length > 0 && hits === want.length };
+}
+function narrowForCode(code, list, nameOf){
+  if(list.length < 2) return list;
+  const names = new Set(list.map(x => nameKey(nameOf(x))));
+  if(names.size < 2) return list;
+  const scored = list.map(x => ({ x, s: codeNumberScore(code, nameOf(x)) }));
+  const full = scored.filter(o => o.s.all);
+  return full.length && full.length < scored.length ? full.map(o => o.x) : list;
+}
+// Item-master codes / spellings found on more than one item (they make matching guess).
+var _dupCodes = null;
+function sharedCodesOf(r){
+  if(!_dupCodes){
+    _dupCodes = new Map();
+    const by = new Map();
+    ((MASTER_ALL && MASTER_ALL.branches && MASTER_ALL.branches[BRANCH.key] || {}).items || []).forEach(it => {
+      [it.code, ...splitList(it.other)].filter(Boolean).forEach(c => {
+        const k = codeKey(c); if(!k) return;
+        if(!by.has(k)) by.set(k, { c, names: new Map() });
+        by.get(k).names.set(nameKey(it.name), it.name);
+      });
+    });
+    by.forEach(v => { if(v.names.size > 1) _dupCodes.set(codeKey(v.c), v); });
+  }
+  const out = [];
+  [r.code, ...splitList(r.other)].filter(Boolean).forEach(c => {
+    const v = _dupCodes.get(codeKey(c)); if(!v) return;
+    const others = [...v.names.entries()].filter(([k]) => k !== nameKey(r.name)).map(([, n]) => n);
+    if(others.length) out.push(`"${c}" is also on ${others.map(n => '"' + n + '"').join(', ')}`);
+  });
+  return out;
+}
 function masterSingleForCode(code){
   const a = masterItemsForCode(code);
   if(a.length === 1) return a[0];
@@ -2182,6 +2223,8 @@ function masterCodeRelation(desc, code){
   if(!d.length) return null;
   const c = masterItemsForCode(code);
   if(!c.length) return null;
+  // still on two different items after narrowing: the list can't tell which one the code means
+  if(new Set(c.map(x => nameKey(x.name))).size > 1) return null;
   if(c.some(x => d.includes(x))) return 'same';
   const names = new Set(d.map(x => nameKey(x.name)));
   if(c.some(x => names.has(nameKey(x.name)))) return 'same';
@@ -2769,6 +2812,7 @@ function masterNeeds(tab, r){
     const ht = r.ht > 0 ? r.ht : (typeof guessHeightFt === 'function' ? guessHeightFt(r.name) : null);
     if(k && (k === keys.sheet || k === keys.roll) && !(ht > 0)) out.push('no height');
     if(k && k === keys.sheet && !(r.len > 0) && !((rules[k] || {}).lengthFt > 0)) out.push('no length');
+    sharedCodesOf(r).forEach(t => out.push('code ' + t + ' — keep it on one item only'));
   }else if(tab === 'slab'){
     const n = nameKey(r.item);
     const it = ['ekm', 'clt'].map(b => ((MASTER_ALL.branches[b] || {}).items || []).find(x => nameKey(x.name) === n)).find(Boolean);
@@ -2782,7 +2826,7 @@ function def_needCount(){ return MASTER_DEFS[masterTab].list().filter(r => maste
 function hdr(f){ return typeof f.h === 'function' ? f.h() : f.h; }
 
 function renderMasterPanel(){
-  _grpMap = null;
+  _grpMap = null; _dupCodes = null;
   const def = MASTER_DEFS[masterTab];
   if(!def){ masterPanel.innerHTML = ''; return; }
   if(!MASTER_ALL || !MASTER_ALL.branches || !MASTER_ALL.branches[BRANCH.key]){
@@ -3121,7 +3165,7 @@ function deleteMasterRow(row){
   renderMasterPanel();
 }
 function afterMasterChange(){
-  _grpMap = null;
+  _grpMap = null; _dupCodes = null;
   idbSet('master', MASTER_ALL);
   applyMasterAll(false);
   recalcAllCards();

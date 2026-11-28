@@ -140,8 +140,13 @@ function getBundleInfo(description){
 function findCodeLabel(code){
   if(!code) return null;
   const target = normalize(code);
-  const hit = itemCodes.find(([c]) => normalize(c) === target);
-  if(hit) return hit[1];
+  // Every item carrying this code — if a code sits on two items, the one whose name has the code's
+  // own numbers wins (40x40x3mmx12x5 → the 3mm sheet); still two → no label rather than a guess.
+  const hits = narrowForCode(code, itemCodes.filter(([c]) => normalize(c) === target), h => h[1]);
+  if(hits.length){
+    const names = new Set(hits.map(h => nameKey(h[1])));
+    return names.size === 1 ? hits[0][1] : null;
+  }
 
   // Fallback: normalised-code match, tolerating spacing/typo variants a rate sheet might have
   // ("lit" vs "lite", "1 x 1" vs "1x1", ".5" vs "1/2", stray spaces). Only trusted when it
@@ -149,8 +154,8 @@ function findCodeLabel(code){
   // unresolved rather than guessing, same as the exact-match path always did.
   const n = normCode(code);
   if(!n) return null;
-  const byNorm = itemCodes.filter(([c]) => normCode(c) === n);
-  return byNorm.length === 1 ? byNorm[0][1] : null;
+  const byNorm = narrowForCode(code, itemCodes.filter(([c]) => normCode(c) === n), h => h[1]);
+  return byNorm.length && new Set(byNorm.map(h => nameKey(h[1]))).size === 1 ? byNorm[0][1] : null;
 }
 
 // Pure text sanity-check between the billed description and the reference table's decoded spec —
