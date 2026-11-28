@@ -163,6 +163,11 @@
   .slab-note.above{ color: #B4570B; }
   .slab-gap-note{ margin-top: 4px; font-size: 11.5px; color: var(--amber); line-height: 1.4; }
   .invoice-card.local .plan-col{ display: none; }
+  /* Rate slab switched off for the dispatch list (local bills always keep it) */
+  body.slab-off .invoice-card:not(.local) .slab-th,
+  body.slab-off .invoice-card:not(.local) .slab-cell{ display: none; }
+  body[data-view="local"] #slabToggle{ display: none; }
+  body.slab-off[data-view="bills"] #slabStatus{ display: none; }
   .local-tag{ display: inline-block; font-family: 'IBM Plex Mono', monospace; font-size: 11px; padding: 2px 8px; border-radius: 3px; background: #EFE6F7; color: #6A3D91; border: 1px solid #B99AD3; }
   .dropzone.local-zone{ border-color: #B99AD3; }
   .slab-gaps{ margin: 8px 0 0; padding: 8px 12px; border: 1px dashed var(--amber); border-radius: 4px; background: var(--amber-bg); font-size: 12.5px; color: var(--amber); }
@@ -729,6 +734,7 @@
 
   <div class="toggles">
     <button class="toggle-btn" id="screenshotToggle">📸 Screenshot mode</button>
+    <button class="toggle-btn" id="slabToggle">💰 Rate slab: ON</button>
     <span id="slabStatus" class="toggle-btn" style="cursor:default;"></span>
   </div>
 

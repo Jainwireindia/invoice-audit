@@ -4,7 +4,7 @@
 // per browser/machine so an "updated" notice can be shown after an update (see
 // loadPersisted()). This is purely a tracking label — it has no effect on parsing
 // or matching logic.
-const APP_VERSION = 'v8.9';
+const APP_VERSION = 'v8.10';
 // The Invoice Audit Google Sheet — opened from "Sync & login", the sidebar and the master screens.
 // The sheet script also reports its own address on every sync, which takes over if it ever moves.
 // v8.3: the company's Apps Script web app is built in — nobody has to paste it. (Redeploy with
@@ -48,6 +48,12 @@ const masterToggle = document.getElementById('masterToggle');
 const masterPanel = document.getElementById('masterPanel');
 const syncPanel = document.getElementById('syncPanel');
 
+document.getElementById('slabToggle').addEventListener('click', () => {
+  slabOnDispatch = !slabOnDispatch;
+  try{ localStorage.setItem('ia.slabDispatch', slabOnDispatch ? '1' : '0'); }catch(e){}
+  applySlabToggle();
+  recalcAllCards();
+});
 screenshotToggle.addEventListener('click', () => {
   document.body.classList.toggle('screenshot-mode');
   screenshotToggle.style.background = document.body.classList.contains('screenshot-mode') ? 'var(--ink)' : '';
@@ -1142,7 +1148,7 @@ function renderCard(record, container, prepend){
           <th class="num">Billed Qty</th>
           <th>Unit</th>
           <th class="num">Billed Rate</th>
-          <th class="num" title="Billed rate incl GST, and the rate slab (minimum – maximum, incl GST)">Slab (incl GST)</th>
+          <th class="num slab-th" title="Billed rate incl GST, and the rate slab (minimum – maximum, incl GST)">Slab (incl GST)</th>
           <th class="num plan-col">Expected Rate</th>
           <th class="plan-col">Category</th>
           <th class="num plan-col">Height ft</th>
@@ -3659,9 +3665,23 @@ function slabFor(row, record, result){
 }
 
 const LOCAL_RESULT = { flagged: false, pending: false, expectedRate: null, qtyMismatch: false, rateMismatch: false, otherIssues: [], infoNotes: [] };
+// Rate slab on/off for the dispatch-list check (local bills always use the slab). Off = no slab
+// column, no slab flags or notes — on screen, in screenshots, WhatsApp pictures and the log.
+let slabOnDispatch = (() => { try{ return localStorage.getItem('ia.slabDispatch') !== '0'; }catch(e){ return true; } })();
+function slabActive(record){ return !!(record && (record.local || slabOnDispatch)); }
+function applySlabToggle(){
+  document.body.classList.toggle('slab-off', !slabOnDispatch);
+  const b = document.getElementById('slabToggle');
+  if(b){
+    b.textContent = slabOnDispatch ? '💰 Rate slab: ON' : '💰 Rate slab: OFF';
+    b.style.background = slabOnDispatch ? 'var(--ink)' : '';
+    b.style.color = slabOnDispatch ? 'var(--paper-raised)' : '';
+    b.title = slabOnDispatch ? 'Dispatch bills are checked against the rate slab too — click to switch it off' : 'Dispatch bills are checked against the loading list only — click to switch the rate slab on';
+  }
+}
 function lineCheck(row, record){
   const result = record.local ? LOCAL_RESULT : computeRow(row);
-  const slab = slabFor(row, record, result);
+  const slab = slabActive(record) ? slabFor(row, record, result) : null;
   const slabFlag = !!slab && (slab.status === 'below' || slab.status === 'above');
   const issues = [];
   if(slabFlag) issues.push(slab.message);
@@ -3828,13 +3848,15 @@ function drawBillImage(record){
   if(gaps.length) y = waBox(ctx, y, gaps, 'warn', '❓ Not checked — no rate slab');
   if(!issues.length && shareKind(record) === 'verified'){
     ctx.fillStyle = WA.greenBg; waRound(ctx, WA.PAD, y, WA.W - WA.PAD * 2, 44, 6); ctx.fill();
-    ctx.fillStyle = WA.green; ctx.font = '700 17px Inter, sans-serif'; ctx.fillText('✓ Every line checked — rates within the slab' + (local ? '' : ' and the loading list'), WA.PAD + 14, y + 13);
+    ctx.fillStyle = WA.green; ctx.font = '700 17px Inter, sans-serif'; ctx.fillText(local ? '✓ Every line checked — rates within the slab' : slabActive(record) ? '✓ Every line checked — rates within the slab and the loading list' : '✓ Every line checked — rates and quantities match the loading list', WA.PAD + 14, y + 13);
     y += 58;
   }
   // line table
+  const showSlab = slabActive(record);
   const cols = local
     ? [['#', 34, 'l'], ['Item', 0, 'l'], ['Qty', 118, 'r'], ['Billed ₹', 104, 'r'], ['Slab min – max ₹', 170, 'r'], ['', 34, 'c']]
-    : [['#', 34, 'l'], ['Item', 0, 'l'], ['Qty', 112, 'r'], ['Billed ₹', 98, 'r'], ['Loading list ₹', 112, 'r'], ['Slab min – max ₹', 158, 'r'], ['', 34, 'c']];
+    : showSlab ? [['#', 34, 'l'], ['Item', 0, 'l'], ['Qty', 112, 'r'], ['Billed ₹', 98, 'r'], ['Loading list ₹', 112, 'r'], ['Slab min – max ₹', 158, 'r'], ['', 34, 'c']]
+    : [['#', 34, 'l'], ['Item', 0, 'l'], ['Qty', 120, 'r'], ['Billed ₹', 120, 'r'], ['Loading list ₹', 130, 'r'], ['', 34, 'c']];
   const fixed = cols.reduce((t, c2) => t + c2[1], 0) + (cols.length - 1) * 10;
   cols[1][1] = WA.W - WA.PAD * 2 - fixed;
   const xs = []; let x = WA.PAD; cols.forEach(c2 => { xs.push(x); x += c2[1] + 10; });
@@ -3862,11 +3884,14 @@ function drawBillImage(record){
     cellText(3, fmt(d.billed), y + 8, `${belowOrAbove ? 700 : 500} 14px "IBM Plex Mono", monospace`, belowOrAbove ? WA.red : WA.ink);
     let ci = 4;
     if(!local){ cellText(4, d.plan !== null ? fmt(d.plan) : '—', y + 8, '500 14px "IBM Plex Mono", monospace', WA.ink); ci = 5; }
-    const slabTxt = !d.sl || d.sl.gap ? '—' : `${fmt(d.sl.min)} – ${fmt(d.sl.max)}`;
-    cellText(ci, slabTxt, y + 8, '500 14px "IBM Plex Mono", monospace', WA.soft);
-    if(d.sl && (d.sl.status === 'below' || d.sl.status === 'above'))
-      cellText(ci, `${d.sl.status === 'below' ? '▼' : '▲'} ₹${fmt(d.sl.diff)} (${fmtPct(d.sl.pct)})`, y + 28, '700 12.5px Inter, sans-serif', WA.red);
-    cellText(ci + 1, d.mark, y + 6, '700 18px Inter, sans-serif', col);
+    if(showSlab){
+      const slabTxt = !d.sl || d.sl.gap ? '—' : `${fmt(d.sl.min)} – ${fmt(d.sl.max)}`;
+      cellText(ci, slabTxt, y + 8, '500 14px "IBM Plex Mono", monospace', WA.soft);
+      if(d.sl && (d.sl.status === 'below' || d.sl.status === 'above'))
+        cellText(ci, `${d.sl.status === 'below' ? '▼' : '▲'} ₹${fmt(d.sl.diff)} (${fmtPct(d.sl.pct)})`, y + 28, '700 12.5px Inter, sans-serif', WA.red);
+      ci++;
+    }
+    cellText(ci, d.mark, y + 6, '700 18px Inter, sans-serif', col);
     y += Math.max(h, d.sl && (d.sl.status === 'below' || d.sl.status === 'above') ? 48 : h);
   });
   y += 12;
@@ -3965,6 +3990,7 @@ function copyBillImage(record, btn){
 (async function bootV7(){
   applyBranchTexts();
   document.getElementById('syncNowBtn').addEventListener('click', () => fullSync());
+  applySlabToggle();
   initLockScreen();
   await loadPersisted();                         // this browser's rules, log, parser report
   try{ outbox = (await idbGet('outbox')) || []; }catch(e){ outbox = []; }
